@@ -1,0 +1,648 @@
+import React, { useState, useEffect } from 'react';
+import { useParams, useOutletContext, useNavigate } from 'react-router-dom';
+import { 
+  Briefcase, 
+  Share2, 
+  Plus, 
+  Info, 
+  ChevronLeft, 
+  ChevronRight, 
+  Check, 
+  Mail, 
+  FileText,
+  MapPin,
+  AlertCircle,
+  MoreVertical
+} from 'lucide-react';
+import { api } from '../lib/api';
+import type { Project, Invoice, PurchaseOrder, TaxInvoice, Activity } from '../types';
+import { Toast } from '../components/Toast';
+
+type TabName = 'Overview' | 'Purchase Orders' | 'Invoices' | 'Tax Invoices' | 'Bill Desk' | 'Documents';
+
+export const ProjectDetail: React.FC = () => {
+  const { id } = useParams<{ id: string }>();
+  const navigate = useNavigate();
+  const { searchQuery } = useOutletContext<{ searchQuery: string }>();
+
+  const [project, setProject] = useState<Project | null>(null);
+  const [invoices, setInvoices] = useState<Invoice[]>([]);
+  const [purchaseOrders, setPurchaseOrders] = useState<PurchaseOrder[]>([]);
+  const [taxInvoices, setTaxInvoices] = useState<TaxInvoice[]>([]);
+  const [activities, setActivities] = useState<Activity[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [activeTab, setActiveTab] = useState<TabName>('Invoices');
+  const [showToast, setShowToast] = useState(false);
+
+  // Pagination states
+  const [currentPage, setCurrentPage] = useState(1);
+  const rowsPerPage = 5;
+
+  useEffect(() => {
+    const loadProjectData = async () => {
+      if (!id) return;
+      try {
+        const proj = await api.getProjectById(id);
+        if (proj) {
+          setProject(proj);
+          const allInvs = await api.getInvoices();
+          setInvoices(allInvs.filter(inv => inv.projectNo === id));
+          const allPOs = await api.getPurchaseOrders();
+          setPurchaseOrders(allPOs.filter(po => po.projectNo === id));
+          const allTxs = await api.getTaxInvoices();
+          setTaxInvoices(allTxs.filter(tx => tx.projectNo === id));
+          const allActs = await api.getActivities();
+          setActivities(allActs.filter(act => act.projectNo === id));
+          
+          // Trigger system sync toast on load
+          setShowToast(true);
+        }
+      } catch (err) {
+        console.error(err);
+      } finally {
+        setLoading(false);
+      }
+    };
+    loadProjectData();
+  }, [id]);
+
+  const formatINR = (val: number, abbreviate = true) => {
+    if (abbreviate) {
+      if (val >= 10000000) {
+        return `₹${(val / 10000000).toFixed(2)} Cr`;
+      }
+      if (val >= 100000) {
+        return `₹${(val / 100000).toFixed(2)} L`;
+      }
+    }
+    return `₹${val.toLocaleString('en-IN')}`;
+  };
+
+  if (loading) {
+    return <div className="text-secondary font-headline p-8">Loading project details...</div>;
+  }
+
+  if (!project) {
+    return (
+      <div className="p-8 text-center space-y-4">
+        <h3 className="font-headline text-xl font-bold text-on-surface">Project Not Found</h3>
+        <button 
+          onClick={() => navigate('/projects')}
+          className="text-primary hover:underline font-headline font-semibold flex items-center justify-center gap-1 mx-auto"
+        >
+          <ChevronLeft className="w-4 h-4" /> Back to projects list
+        </button>
+      </div>
+    );
+  }
+
+  // Stat Calculations
+  const poAmount = project.poAmount;
+  const receivedAmount = project.amountPaid;
+  const paidAmount = project.amountPaid;
+  const outstandingAmount = Math.max(0, poAmount - receivedAmount);
+
+  const receivedPct = poAmount > 0 ? Math.round((receivedAmount / poAmount) * 100) : 0;
+  const paidPct = poAmount > 0 ? Math.round((paidAmount / poAmount) * 100) : 0;
+  const outstandingPct = poAmount > 0 ? Math.round((outstandingAmount / poAmount) * 100) : 0;
+
+  // Filter lists based on search query in layout context
+  const filteredInvoices = invoices.filter(i => 
+    i.id.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    i.status.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    i.dueDate.includes(searchQuery)
+  );
+
+  const filteredPOs = purchaseOrders.filter(po => 
+    po.id.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    po.vendor.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    po.status.toLowerCase().includes(searchQuery.toLowerCase())
+  );
+
+  const filteredTxs = taxInvoices.filter(tx => 
+    tx.id.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    tx.linkedInvoiceNo.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    tx.status.toLowerCase().includes(searchQuery.toLowerCase())
+  );
+
+  // Paginated elements helper
+  const paginate = (items: any[]) => {
+    const startIndex = (currentPage - 1) * rowsPerPage;
+    return items.slice(startIndex, startIndex + rowsPerPage);
+  };
+
+  const handlePageChange = (direction: 'prev' | 'next', totalItems: number) => {
+    const maxPage = Math.ceil(totalItems / rowsPerPage);
+    if (direction === 'prev' && currentPage > 1) {
+      setCurrentPage(currentPage - 1);
+    } else if (direction === 'next' && currentPage < maxPage) {
+      setCurrentPage(currentPage + 1);
+    }
+  };
+
+  return (
+    <div className="space-y-stack-lg relative">
+      {/* Toast Synchronization Alert */}
+      {showToast && (
+        <Toast 
+          message="System synchronized successfully." 
+          onClose={() => setShowToast(false)} 
+        />
+      )}
+
+      {/* Header Block */}
+      <div className="bg-surface-container-lowest border border-outline-variant rounded-md p-6 shadow-sm">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+          <div className="space-y-1">
+            <div className="flex items-center gap-3">
+              <span className="px-2.5 py-0.5 rounded-full bg-primary/10 text-primary font-headline font-bold text-[10px] tracking-wider uppercase">
+                Active Project
+              </span>
+              <span className="text-secondary font-headline text-xs font-semibold">
+                Project No: {project.id}
+              </span>
+            </div>
+            <h2 className="font-headline text-2xl font-bold text-on-surface">{project.name}</h2>
+            <p className="text-secondary font-sans text-sm max-w-2xl mt-1">{project.description}</p>
+          </div>
+          <div className="flex gap-2 shrink-0">
+            <button 
+              onClick={() => alert('Detail report shared.')}
+              className="flex items-center gap-2 px-4 py-2 border border-outline-variant rounded-lg text-secondary font-headline text-sm font-semibold hover:bg-surface-container transition-all"
+            >
+              <Share2 className="w-4 h-4 text-outline" />
+              <span>Share Report</span>
+            </button>
+            <button 
+              onClick={() => navigate('/bill-desk')}
+              className="flex items-center gap-2 px-4 py-2 bg-primary text-white rounded-lg font-headline text-sm font-semibold hover:bg-primary-container transition-all shadow-sm"
+            >
+              <Plus className="w-4 h-4" />
+              <span>Create Invoice</span>
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {/* Stat Cards Grid */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-stack-md">
+        {/* PO Amount */}
+        <div className="bg-surface-container-lowest border border-outline-variant rounded-md p-5 group hover:border-primary transition-colors shadow-sm">
+          <div className="text-secondary font-headline text-xs font-semibold uppercase tracking-wider flex justify-between">
+            <span>PO Amount</span>
+            <Info className="w-3.5 h-3.5 text-outline" />
+          </div>
+          <div className="mt-2 flex items-baseline gap-2">
+            <span className="font-headline text-3xl font-bold text-on-surface">{formatINR(poAmount, false)}</span>
+          </div>
+          <div className="mt-4 w-full bg-surface-container rounded-full h-1.5 overflow-hidden">
+            <div className="bg-primary h-full rounded-full" style={{ width: '100%' }}></div>
+          </div>
+        </div>
+
+        {/* Received */}
+        <div className="bg-surface-container-lowest border border-outline-variant rounded-md p-5 group hover:border-primary transition-colors shadow-sm">
+          <div className="text-secondary font-headline text-xs font-semibold uppercase tracking-wider flex justify-between">
+            <span>Received</span>
+            <span className="text-primary text-[10px] font-bold">{receivedPct}%</span>
+          </div>
+          <div className="mt-2 flex items-baseline gap-2">
+            <span className="font-headline text-3xl font-bold text-on-surface">{formatINR(receivedAmount, false)}</span>
+          </div>
+          <div className="mt-4 w-full bg-surface-container rounded-full h-1.5 overflow-hidden">
+            <div className="bg-primary-container h-full rounded-full" style={{ width: `${receivedPct}%` }}></div>
+          </div>
+        </div>
+
+        {/* Paid */}
+        <div className="bg-surface-container-lowest border border-outline-variant rounded-md p-5 group hover:border-primary transition-colors shadow-sm">
+          <div className="text-secondary font-headline text-xs font-semibold uppercase tracking-wider flex justify-between">
+            <span>Paid</span>
+            <span className="text-primary text-[10px] font-bold">{paidPct}%</span>
+          </div>
+          <div className="mt-2 flex items-baseline gap-2">
+            <span className="font-headline text-3xl font-bold text-on-surface">{formatINR(paidAmount, false)}</span>
+          </div>
+          <div className="mt-4 w-full bg-surface-container rounded-full h-1.5 overflow-hidden">
+            <div className="bg-primary/60 h-full rounded-full" style={{ width: `${paidPct}%` }}></div>
+          </div>
+        </div>
+
+        {/* Outstanding */}
+        <div className="bg-surface-container-lowest border border-outline-variant rounded-md p-5 group hover:border-primary transition-colors shadow-sm">
+          <div className="text-secondary font-headline text-xs font-semibold uppercase tracking-wider flex justify-between">
+            <span>Outstanding</span>
+            <span className="text-error text-[10px] font-bold">{outstandingPct}%</span>
+          </div>
+          <div className="mt-2 flex items-baseline gap-2 text-error">
+            <span className="font-headline text-3xl font-bold">{formatINR(outstandingAmount, false)}</span>
+          </div>
+          <div className="mt-4 w-full bg-surface-container rounded-full h-1.5 overflow-hidden">
+            <div className="bg-error-container-dark bg-error/40 h-full rounded-full" style={{ width: `${outstandingPct}%` }}></div>
+          </div>
+        </div>
+      </div>
+
+      {/* Main Double Column Section */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-stack-lg">
+        {/* Left Section: Details Table & Timeline */}
+        <div className="lg:col-span-2 space-y-stack-lg">
+          
+          {/* Tabbed Card container */}
+          <div className="bg-surface-container-lowest border border-outline-variant rounded-md overflow-hidden flex flex-col shadow-sm">
+            {/* Tab Navigation header */}
+            <div className="flex items-center px-6 bg-surface-container-low border-b border-outline-variant">
+              <div className="flex space-x-6 h-14 items-center overflow-x-auto no-scrollbar">
+                {(['Overview', 'Purchase Orders', 'Invoices', 'Tax Invoices', 'Bill Desk', 'Documents'] as TabName[]).map((tab) => (
+                  <button
+                    key={tab}
+                    onClick={() => { setActiveTab(tab); setCurrentPage(1); }}
+                    className={`h-full px-1 font-headline text-xs font-semibold tracking-wider uppercase whitespace-nowrap transition-all border-b-2 ${
+                      activeTab === tab 
+                        ? 'text-primary border-primary font-bold' 
+                        : 'text-secondary border-transparent hover:text-primary'
+                    }`}
+                  >
+                    {tab}
+                  </button>
+                ))}
+              </div>
+              
+              {/* Pagination indicators on right side */}
+              {activeTab !== 'Overview' && activeTab !== 'Bill Desk' && (
+                <div className="ml-auto hidden md:flex items-center gap-3">
+                  <div className="h-8 w-px bg-outline-variant mx-2" />
+                  <span className="text-secondary text-xs">Rows per page: {rowsPerPage}</span>
+                  <div className="flex gap-1">
+                    <button 
+                      onClick={() => handlePageChange('prev', activeTab === 'Invoices' ? filteredInvoices.length : activeTab === 'Purchase Orders' ? filteredPOs.length : filteredTxs.length)}
+                      className="p-1 hover:bg-surface-container rounded-md text-secondary"
+                    >
+                      <ChevronLeft className="w-4 h-4" />
+                    </button>
+                    <button 
+                      onClick={() => handlePageChange('next', activeTab === 'Invoices' ? filteredInvoices.length : activeTab === 'Purchase Orders' ? filteredPOs.length : filteredTxs.length)}
+                      className="p-1 hover:bg-surface-container rounded-md text-secondary"
+                    >
+                      <ChevronRight className="w-4 h-4" />
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Tab contents */}
+            <div className="overflow-x-auto">
+              
+              {/* INVOICES TAB */}
+              {activeTab === 'Invoices' && (
+                <>
+                  <table className="w-full text-left border-collapse">
+                    <thead className="bg-surface-container-low/50">
+                      <tr className="border-b border-outline-variant">
+                        <th className="px-6 py-4 font-headline text-xs font-bold text-secondary uppercase tracking-wider">Invoice #</th>
+                        <th className="px-6 py-4 font-headline text-xs font-bold text-secondary uppercase tracking-wider">Date</th>
+                        <th className="px-6 py-4 font-headline text-xs font-bold text-secondary uppercase tracking-wider">Tax Inv Amount</th>
+                        <th className="px-6 py-4 font-headline text-xs font-bold text-secondary uppercase tracking-wider">Total Amount</th>
+                        <th className="px-6 py-4 font-headline text-xs font-bold text-secondary uppercase tracking-wider">Status</th>
+                        <th className="px-6 py-4 font-headline text-xs font-bold text-secondary uppercase tracking-wider text-right w-16">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-outline-variant">
+                      {filteredInvoices.length === 0 ? (
+                        <tr>
+                          <td colSpan={6} className="px-6 py-8 text-center text-secondary font-headline">No invoices found for this project.</td>
+                        </tr>
+                      ) : (
+                        paginate(filteredInvoices).map((inv) => (
+                          <tr key={inv.id} className="hover:bg-surface transition-colors cursor-pointer group">
+                            <td className="px-6 py-4">
+                              <div className="flex items-center gap-3">
+                                <div className="w-8 h-8 rounded bg-primary/5 flex items-center justify-center text-primary">
+                                  <FileText className="w-4 h-4" />
+                                </div>
+                                <span className="font-headline text-sm font-semibold text-on-surface">{inv.id}</span>
+                              </div>
+                            </td>
+                            <td className="px-6 py-4 text-secondary text-sm">{inv.date}</td>
+                            <td className="px-6 py-4 text-secondary text-sm font-medium">{formatINR(inv.tax, false)}</td>
+                            <td className="px-6 py-4 font-headline text-base font-bold text-on-surface">{formatINR(inv.amount, false)}</td>
+                            <td className="px-6 py-4">
+                              <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider border ${
+                                inv.status === 'Paid' 
+                                  ? 'bg-green-100 text-green-700 border-green-200' 
+                                  : inv.status === 'Pending' 
+                                  ? 'bg-amber-100 text-amber-700 border-amber-200' 
+                                  : inv.status === 'Overdue' 
+                                  ? 'bg-red-100 text-red-700 border-red-200'
+                                  : 'bg-surface-container-high text-secondary border-outline-variant'
+                              }`}>
+                                <span className={`w-1.5 h-1.5 rounded-full ${
+                                  inv.status === 'Paid' ? 'bg-green-700' : inv.status === 'Pending' ? 'bg-amber-700' : inv.status === 'Overdue' ? 'bg-red-700' : 'bg-outline'
+                                }`} />
+                                {inv.status}
+                              </span>
+                            </td>
+                            <td className="px-6 py-4 text-right" onClick={e => e.stopPropagation()}>
+                              <button className="p-2 text-secondary hover:text-primary rounded-lg transition-colors">
+                                <MoreVertical className="w-5 h-5" />
+                              </button>
+                            </td>
+                          </tr>
+                        ))
+                      )}
+                    </tbody>
+                  </table>
+                  <div className="p-4 border-t border-outline-variant bg-surface-container-low/40 flex justify-between items-center text-secondary text-xs font-sans">
+                    <p>Showing {Math.min(filteredInvoices.length, (currentPage - 1) * rowsPerPage + 1)} to {Math.min(filteredInvoices.length, currentPage * rowsPerPage)} of {filteredInvoices.length} invoices</p>
+                    <div className="flex gap-2">
+                      <button 
+                        onClick={() => handlePageChange('prev', filteredInvoices.length)}
+                        className="px-3 py-1 border border-outline-variant bg-white rounded hover:bg-surface disabled:opacity-50"
+                        disabled={currentPage === 1}
+                      >
+                        Prev
+                      </button>
+                      <button 
+                        onClick={() => handlePageChange('next', filteredInvoices.length)}
+                        className="px-3 py-1 border border-outline-variant bg-white rounded hover:bg-surface disabled:opacity-50"
+                        disabled={currentPage >= Math.ceil(filteredInvoices.length / rowsPerPage)}
+                      >
+                        Next
+                      </button>
+                    </div>
+                  </div>
+                </>
+              )}
+
+              {/* PURCHASE ORDERS TAB */}
+              {activeTab === 'Purchase Orders' && (
+                <>
+                  <table className="w-full text-left border-collapse">
+                    <thead className="bg-surface-container-low/50">
+                      <tr className="border-b border-outline-variant">
+                        <th className="px-6 py-4 font-headline text-xs font-bold text-secondary uppercase tracking-wider">PO #</th>
+                        <th className="px-6 py-4 font-headline text-xs font-bold text-secondary uppercase tracking-wider">Date</th>
+                        <th className="px-6 py-4 font-headline text-xs font-bold text-secondary uppercase tracking-wider">Vendor</th>
+                        <th className="px-6 py-4 font-headline text-xs font-bold text-secondary uppercase tracking-wider text-right">PO Amount</th>
+                        <th className="px-6 py-4 font-headline text-xs font-bold text-secondary uppercase tracking-wider">Status</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-outline-variant">
+                      {filteredPOs.length === 0 ? (
+                        <tr>
+                          <td colSpan={5} className="px-6 py-8 text-center text-secondary font-headline">No purchase orders linked to this project.</td>
+                        </tr>
+                      ) : (
+                        paginate(filteredPOs).map((po) => (
+                          <tr key={po.id} className="hover:bg-surface transition-colors cursor-pointer">
+                            <td className="px-6 py-4 font-headline text-sm font-semibold text-primary">{po.id}</td>
+                            <td className="px-6 py-4 text-secondary text-sm">{po.date}</td>
+                            <td className="px-6 py-4 font-sans text-sm font-medium">{po.vendor}</td>
+                            <td className="px-6 py-4 text-right font-headline text-base font-bold text-on-surface">{formatINR(po.amount, false)}</td>
+                            <td className="px-6 py-4">
+                              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-green-50 text-green-700 font-bold text-[10px] border border-green-200 uppercase">
+                                <span className="w-1.5 h-1.5 rounded-full bg-green-600" />
+                                {po.status}
+                              </span>
+                            </td>
+                          </tr>
+                        ))
+                      )}
+                    </tbody>
+                  </table>
+                  <div className="p-4 border-t border-outline-variant bg-surface-container-low/40 flex justify-between items-center text-secondary text-xs">
+                    <p>Showing {Math.min(filteredPOs.length, (currentPage - 1) * rowsPerPage + 1)} to {Math.min(filteredPOs.length, currentPage * rowsPerPage)} of {filteredPOs.length} POs</p>
+                  </div>
+                </>
+              )}
+
+              {/* TAX INVOICES TAB */}
+              {activeTab === 'Tax Invoices' && (
+                <>
+                  <table className="w-full text-left border-collapse">
+                    <thead className="bg-surface-container-low/50">
+                      <tr className="border-b border-outline-variant">
+                        <th className="px-6 py-4 font-headline text-xs font-bold text-secondary uppercase tracking-wider">Tax Inv #</th>
+                        <th className="px-6 py-4 font-headline text-xs font-bold text-secondary uppercase tracking-wider">Date</th>
+                        <th className="px-6 py-4 font-headline text-xs font-bold text-secondary uppercase tracking-wider">Linked Invoice</th>
+                        <th className="px-6 py-4 font-headline text-xs font-bold text-secondary uppercase tracking-wider text-right">Taxable Amount</th>
+                        <th className="px-6 py-4 font-headline text-xs font-bold text-secondary uppercase tracking-wider">Status</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-outline-variant">
+                      {filteredTxs.length === 0 ? (
+                        <tr>
+                          <td colSpan={5} className="px-6 py-8 text-center text-secondary font-headline">No tax invoices generated for this project.</td>
+                        </tr>
+                      ) : (
+                        paginate(filteredTxs).map((tx) => (
+                          <tr key={tx.id} className="hover:bg-surface transition-colors cursor-pointer">
+                            <td className="px-6 py-4 font-headline text-sm font-semibold text-primary">{tx.id}</td>
+                            <td className="px-6 py-4 text-secondary text-sm">{tx.date}</td>
+                            <td className="px-6 py-4 font-sans text-sm text-secondary">{tx.linkedInvoiceNo}</td>
+                            <td className="px-6 py-4 text-right font-headline text-base font-bold text-on-surface">{formatINR(tx.amount, false)}</td>
+                            <td className="px-6 py-4">
+                              <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider border ${
+                                tx.status === 'Issued' ? 'bg-green-50 text-green-700 border-green-200' : 'bg-amber-50 text-amber-700 border-amber-200'
+                              }`}>
+                                <span className={`w-1.5 h-1.5 rounded-full ${tx.status === 'Issued' ? 'bg-green-600' : 'bg-amber-600'}`} />
+                                {tx.status}
+                              </span>
+                            </td>
+                          </tr>
+                        ))
+                      )}
+                    </tbody>
+                  </table>
+                  <div className="p-4 border-t border-outline-variant bg-surface-container-low/40 flex justify-between items-center text-secondary text-xs">
+                    <p>Showing {Math.min(filteredTxs.length, (currentPage - 1) * rowsPerPage + 1)} to {Math.min(filteredTxs.length, currentPage * rowsPerPage)} of {filteredTxs.length} tax invoices</p>
+                  </div>
+                </>
+              )}
+
+              {/* OVERVIEW TAB */}
+              {activeTab === 'Overview' && (
+                <div className="p-6 space-y-4 font-sans">
+                  <h4 className="font-headline text-lg font-bold text-on-surface">Detailed Scope</h4>
+                  <p className="text-secondary text-sm leading-relaxed">{project.description}</p>
+                  <div className="grid grid-cols-2 gap-4 pt-4 border-t border-outline-variant">
+                    <div>
+                      <span className="text-xs text-secondary font-bold font-headline uppercase block">Client Entity</span>
+                      <span className="font-semibold text-sm">{project.client}</span>
+                    </div>
+                    <div>
+                      <span className="text-xs text-secondary font-bold font-headline uppercase block">Administrative Department</span>
+                      <span className="font-semibold text-sm">{project.department}</span>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* BILL DESK TAB */}
+              {activeTab === 'Bill Desk' && (
+                <div className="p-6 space-y-4 font-sans">
+                  <h4 className="font-headline text-lg font-bold text-on-surface">Project Billing Desk</h4>
+                  <p className="text-secondary text-sm">Direct portal to settle pending claims and audit draft payouts.</p>
+                  
+                  <div className="bg-primary/5 border border-primary/20 rounded-lg p-4 flex gap-4 items-start">
+                    <Info className="w-5 h-5 text-primary shrink-0 mt-0.5" />
+                    <div>
+                      <p className="text-sm font-semibold text-primary">Pre-Audit Recommended</p>
+                      <p className="text-xs text-secondary mt-1">
+                        System highlights that {project.poCount} active POs are fully funded. Ensure matching compliance tags are attached before posting invoices.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* DOCUMENTS TAB */}
+              {activeTab === 'Documents' && (
+                <table className="w-full text-left border-collapse">
+                  <thead className="bg-surface-container-low/50">
+                    <tr className="border-b border-outline-variant">
+                      <th className="px-6 py-4 font-headline text-xs font-bold text-secondary uppercase tracking-wider">Document Name</th>
+                      <th className="px-6 py-4 font-headline text-xs font-bold text-secondary uppercase tracking-wider">Category</th>
+                      <th className="px-6 py-4 font-headline text-xs font-bold text-secondary uppercase tracking-wider text-right">Size</th>
+                      <th className="px-6 py-4 font-headline text-xs font-bold text-secondary uppercase tracking-wider text-center">Action</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-outline-variant font-sans">
+                    <tr className="hover:bg-surface">
+                      <td className="px-6 py-4 font-medium text-sm text-primary hover:underline cursor-pointer">Sanction_Order_Signed.pdf</td>
+                      <td className="px-6 py-4 text-secondary text-sm">Government Release</td>
+                      <td className="px-6 py-4 text-right text-secondary text-sm">2.4 MB</td>
+                      <td className="px-6 py-4 text-center"><a href="#" className="text-primary text-xs font-bold hover:underline">DOWNLOAD</a></td>
+                    </tr>
+                    <tr className="hover:bg-surface">
+                      <td className="px-6 py-4 font-medium text-sm text-primary hover:underline cursor-pointer">Compliance_Clearance_2026.pdf</td>
+                      <td className="px-6 py-4 text-secondary text-sm">Audit Certificate</td>
+                      <td className="px-6 py-4 text-right text-secondary text-sm">1.8 MB</td>
+                      <td className="px-6 py-4 text-center"><a href="#" className="text-primary text-xs font-bold hover:underline">DOWNLOAD</a></td>
+                    </tr>
+                  </tbody>
+                </table>
+              )}
+
+            </div>
+          </div>
+
+          {/* Project Timeline Activity Log */}
+          <div className="bg-surface-container-lowest border border-outline-variant rounded-md p-6 shadow-sm">
+            <h3 className="font-headline text-lg font-bold mb-6">Recent Activity</h3>
+            <div className="space-y-6">
+              {activities.length === 0 ? (
+                <div className="flex gap-4">
+                  <div className="flex flex-col items-center">
+                    <div className="w-8 h-8 rounded-full bg-primary flex items-center justify-center text-white ring-4 ring-primary/10">
+                      <Check className="w-4 h-4" />
+                    </div>
+                  </div>
+                  <div>
+                    <p className="text-sm font-semibold">Project Initialized</p>
+                    <p className="text-xs text-secondary mt-1">Administrative workflow configured.</p>
+                  </div>
+                </div>
+              ) : (
+                activities.map((act, index) => (
+                  <div key={act.id} className="flex gap-4">
+                    <div className="flex flex-col items-center">
+                      <div className={`w-8 h-8 rounded-full flex items-center justify-center ring-4 ${
+                        act.type === 'success' 
+                          ? 'bg-primary text-white ring-primary/10' 
+                          : act.type === 'warning' 
+                          ? 'bg-error text-white ring-error/10' 
+                          : 'bg-secondary text-white ring-secondary/10'
+                      }`}>
+                        {act.type === 'success' ? (
+                          <Check className="w-4 h-4" />
+                        ) : act.type === 'warning' ? (
+                          <AlertCircle className="w-4 h-4" />
+                        ) : (
+                          <Mail className="w-4 h-4" />
+                        )}
+                      </div>
+                      {index < activities.length - 1 && (
+                        <div className="w-0.5 h-full bg-outline-variant mt-2" />
+                      )}
+                    </div>
+                    <div className={index < activities.length - 1 ? 'pb-6' : ''}>
+                      <p className="text-sm font-semibold text-on-surface">{act.title}</p>
+                      <p className="text-xs text-secondary mt-1">{act.timestamp} &bull; by {act.actor}</p>
+                      <p className="text-xs text-secondary font-sans mt-2">{act.description}</p>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+
+        </div>
+
+        {/* Right Section: Sidebar Metadata & Health */}
+        <div className="space-y-stack-lg">
+          
+          {/* Map Site Card */}
+          <div className="bg-surface-container-lowest border border-outline-variant rounded-md p-1 shadow-sm overflow-hidden">
+            <div className="h-40 w-full relative">
+              <img 
+                className="w-full h-full object-cover rounded-t-md" 
+                alt={`Delhi NCR Map representing ${project.name}`} 
+                src="https://lh3.googleusercontent.com/aida-public/AB6AXuAOLsaZb0wPCb7KWsyVRdKioWDin1-O7q4GJLIJt4y1F_7ZouKS9m5lYmsB0FiYcrarG8klCYuJzNd9uBa9JOT8trEIdjrvUmmL3LfUZ1c60-E4PBXWcA8wdzm4ohHQMQYGgHBG1kKszJTZne4vc44OhlIG3pQXRoXooFu1YzuXDQz_9YfX8-On-WQwbvxwUFbEPxT94rkzYjg2iPdK5mfMbGS22KVRDHQfLSJTDeYCQI4qqH6LGwSotI4UNAO0adfZW5ZSbf9t4nKc" 
+              />
+              <div className="absolute inset-0 bg-gradient-to-t from-black/50 to-transparent flex items-end p-4">
+                <div className="flex items-center gap-2 text-white">
+                  <MapPin className="w-4 h-4" />
+                  <span className="text-[10px] font-bold uppercase tracking-wider">Project Site: {project.location}</span>
+                </div>
+              </div>
+            </div>
+            
+            {/* Project Specs */}
+            <div className="p-5 space-y-4 font-sans">
+              <div className="flex justify-between items-center pb-3 border-b border-outline-variant">
+                <span className="text-secondary text-sm">Contract Duration</span>
+                <span className="font-bold text-sm text-on-surface">{project.duration}</span>
+              </div>
+              <div className="flex justify-between items-center pb-3 border-b border-outline-variant">
+                <span className="text-secondary text-sm">Project Manager</span>
+                <span className="font-bold text-sm text-on-surface">{project.manager}</span>
+              </div>
+              <div className="flex justify-between items-center">
+                <span className="text-secondary text-sm">Priority Level</span>
+                <span className={`px-2.5 py-0.5 rounded-full font-bold text-[10px] uppercase border ${
+                  project.priority === 'High' 
+                    ? 'bg-red-50 text-red-700 border-red-200' 
+                    : project.priority === 'Medium' 
+                    ? 'bg-amber-50 text-amber-700 border-amber-200' 
+                    : 'bg-secondary/10 text-secondary border-outline-variant'
+                }`}>
+                  {project.priority} Priority
+                </span>
+              </div>
+            </div>
+          </div>
+
+          {/* Financial Health block */}
+          <div className="bg-primary p-6 rounded-md text-white relative overflow-hidden group shadow-sm">
+            <div className="relative z-10">
+              <h4 className="font-headline text-base font-bold">Financial Health</h4>
+              <p className="text-xs opacity-80 mt-1 font-sans">Performance is within projected margins</p>
+              <div className="mt-6">
+                <span className="text-4xl font-headline font-bold">{project.healthScore.toFixed(1)}%</span>
+                <div className="mt-3 w-full bg-white/20 h-2 rounded-full overflow-hidden">
+                  <div className="bg-white h-full rounded-full" style={{ width: `${project.healthScore}%` }}></div>
+                </div>
+              </div>
+            </div>
+            <div className="absolute -right-8 -bottom-8 opacity-10 group-hover:scale-110 transition-transform duration-500 pointer-events-none">
+              <Briefcase className="w-36 h-36" />
+            </div>
+          </div>
+
+        </div>
+      </div>
+    </div>
+  );
+};

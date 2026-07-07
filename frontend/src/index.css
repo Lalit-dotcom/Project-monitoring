@@ -1,0 +1,34 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  body {
+    @apply bg-background text-on-surface font-sans;
+  }
+  
+  h1, h2, h3, h4, h5, h6, .font-headline {
+    font-family: 'Geist', sans-serif;
+  }
+}
+
+/* Custom Scrollbar for clean UI */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: #bcc9c6;
+  border-radius: 10px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #6d7a77;
+}
+
+/* Tonal layer helpers and inputs */
+input, select {
+  @apply h-10 px-4 py-2 bg-surface-container-low border border-outline-variant rounded-DEFAULT font-sans text-on-surface focus:outline-none focus:border-primary focus:bg-surface-container-lowest transition-all duration-200;
+}
