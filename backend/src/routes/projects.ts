@@ -4,15 +4,39 @@ import type { Project } from '../types/project.js';
 
 const router = Router();
 
+// Shared SQL CASE fragment to determine the payment status of a project
+const paymentStatusCaseSql = `
+  CASE
+    WHEN no_of_inv_billdesk = 0 AND total_invoice_amount = 0 THEN 'No Invoices Yet'
+    WHEN total_invoice_amount > 0 AND total_amount_paid >= total_invoice_amount THEN 'Fully Paid'
+    ELSE 'Partially Paid'
+  END
+`.trim();
+
 // Convert snake_case database fields to camelCase properties for client JSON payload
 function mapRowToProject(row: any): Project {
   let createdOnStr: string | null = null;
   if (row.created_on) {
     if (row.created_on instanceof Date) {
-      // Keep only YYYY-MM-DD
       createdOnStr = row.created_on.toISOString().split('T')[0];
     } else {
       createdOnStr = String(row.created_on);
+    }
+  }
+
+  // Use the database-computed status if present, otherwise fall back to Javascript computation
+  let paymentStatus: 'Fully Paid' | 'Partially Paid' | 'No Invoices Yet' = row.computed_payment_status;
+  if (!paymentStatus) {
+    const noOfInv = Number(row.no_of_inv_billdesk);
+    const totalInv = Number(row.total_invoice_amount);
+    const paid = Number(row.total_amount_paid);
+
+    if (noOfInv === 0 && totalInv === 0) {
+      paymentStatus = 'No Invoices Yet';
+    } else if (totalInv > 0 && paid >= totalInv) {
+      paymentStatus = 'Fully Paid';
+    } else {
+      paymentStatus = 'Partially Paid';
     }
   }
 
@@ -42,12 +66,134 @@ function mapRowToProject(row: any): Project {
     hodEmail: row.hod_email,
     nicCordEmailId: row.nic_cord_emailid,
     staffEmailId: row.staff_email_id,
+    paymentStatus
   };
 }
 
+// Get distinct project types
+router.get('/types', async (req: Request, res: Response): Promise<void> => {
+  try {
+    const result = await pool.query(
+      "SELECT DISTINCT prj_type FROM projects WHERE prj_type IS NOT NULL AND prj_type != '' ORDER BY prj_type ASC"
+    );
+    const types = result.rows.map(row => row.prj_type);
+    res.json(types);
+  } catch (error: any) {
+    console.error('Database query error:', error);
+    res.status(500).json({
+      error: 'An internal server error occurred while retrieving project types.'
+    });
+  }
+});
+
+// Get projects with filtering and sorting
 router.get('/', async (req: Request, res: Response): Promise<void> => {
   try {
-    const result = await pool.query('SELECT * FROM projects ORDER BY header_id ASC');
+    const conditions: string[] = [];
+    const values: any[] = [];
+    let paramIndex = 1;
+
+    // Search condition: Customer name, project name, or code
+    const search = req.query.search;
+    if (search && typeof search === 'string' && search.trim() !== '') {
+      conditions.push(
+        `(customer_name ILIKE $${paramIndex} OR prj_nm ILIKE $${paramIndex} OR project_cd ILIKE $${paramIndex})`
+      );
+      values.push(`%${search.trim()}%`);
+      paramIndex++;
+    }
+
+    // Payment Status condition
+    const paymentStatus = req.query.paymentStatus;
+    if (paymentStatus === 'no_invoices') {
+      conditions.push(`${paymentStatusCaseSql} = $${paramIndex}`);
+      values.push('No Invoices Yet');
+      paramIndex++;
+    } else if (paymentStatus === 'fully_paid') {
+      conditions.push(`${paymentStatusCaseSql} = $${paramIndex}`);
+      values.push('Fully Paid');
+      paramIndex++;
+    } else if (paymentStatus === 'partially_paid') {
+      conditions.push(`${paymentStatusCaseSql} = $${paramIndex}`);
+      values.push('Partially Paid');
+      paramIndex++;
+    }
+
+    // Project Type condition
+    const projectType = req.query.projectType;
+    if (projectType && typeof projectType === 'string' && projectType !== 'All' && projectType.trim() !== '') {
+      conditions.push(`prj_type = $${paramIndex}`);
+      values.push(projectType.trim());
+      paramIndex++;
+    }
+
+    // Amount Range filtering
+    const amountFieldRaw = req.query.amountField;
+    const amountField = amountFieldRaw === 'amount_received' ? 'amount_received' : 'po_amount';
+
+    const minAmount = req.query.minAmount;
+    if (minAmount !== undefined && minAmount !== '') {
+      const minNum = parseFloat(minAmount as string);
+      if (!isNaN(minNum)) {
+        conditions.push(`${amountField} >= $${paramIndex}`);
+        values.push(minNum);
+        paramIndex++;
+      }
+    }
+
+    const maxAmount = req.query.maxAmount;
+    if (maxAmount !== undefined && maxAmount !== '') {
+      const maxNum = parseFloat(maxAmount as string);
+      if (!isNaN(maxNum)) {
+        conditions.push(`${amountField} <= $${paramIndex}`);
+        values.push(maxNum);
+        paramIndex++;
+      }
+    }
+
+    // Date Range filtering
+    const dateFrom = req.query.dateFrom;
+    if (dateFrom && typeof dateFrom === 'string' && dateFrom.trim() !== '') {
+      conditions.push(`created_on >= $${paramIndex}`);
+      values.push(dateFrom.trim());
+      paramIndex++;
+    }
+
+    const dateTo = req.query.dateTo;
+    if (dateTo && typeof dateTo === 'string' && dateTo.trim() !== '') {
+      conditions.push(`created_on <= $${paramIndex}`);
+      values.push(dateTo.trim());
+      paramIndex++;
+    }
+
+    // Checkbox toggles
+    const noPoYet = req.query.noPoYet;
+    if (noPoYet === 'true' || noPoYet === true) {
+      conditions.push('no_of_po = 0');
+    }
+
+    const taxInvoiceOutstanding = req.query.taxInvoiceOutstanding;
+    if (taxInvoiceOutstanding === 'true' || taxInvoiceOutstanding === true) {
+      conditions.push('no_of_tax_invoice > 0 AND total_amount_paid < total_invoice_amount');
+    }
+
+    // Sorting parameters
+    const sortByRaw = req.query.sortBy;
+    const allowedSortFields = ['po_amount', 'amount_received', 'total_amount_paid', 'created_on'];
+    const sortBy = allowedSortFields.includes(sortByRaw as string) ? sortByRaw : 'created_on';
+
+    const sortOrderRaw = req.query.sortOrder;
+    const sortOrder = (sortOrderRaw as string)?.toLowerCase() === 'asc' ? 'ASC' : 'DESC';
+
+    // Construct SQL Query projecting computed_payment_status
+    let queryText = `SELECT *, ${paymentStatusCaseSql} AS computed_payment_status FROM projects`;
+    if (conditions.length > 0) {
+      queryText += ' WHERE ' + conditions.join(' AND ');
+    }
+    queryText += ` ORDER BY ${sortBy} ${sortOrder}, header_id ASC`;
+
+    // Query Postgres
+    const result = await pool.query(queryText, values);
     const projects: Project[] = result.rows.map(mapRowToProject);
 
     res.json({
@@ -63,3 +209,4 @@ router.get('/', async (req: Request, res: Response): Promise<void> => {
 });
 
 export default router;
+

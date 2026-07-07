@@ -23,25 +23,12 @@ const getStateName = (cd: string): string => {
 };
 
 const mapDbProjectToProject = (dbProj: DatabaseProject): Project => {
-  let status: 'Fully Paid' | 'Partially Paid' | 'No Invoices Yet' = 'No Invoices Yet';
-  const paid = dbProj.totalAmountPaid || 0;
-  const po = dbProj.poAmount || 0;
-  const inv = dbProj.totalInvoiceAmount || 0;
-
-  if (inv === 0 && paid === 0) {
-    status = 'No Invoices Yet';
-  } else if (paid >= po && po > 0) {
-    status = 'Fully Paid';
-  } else {
-    status = 'Partially Paid';
-  }
-
   return {
     id: dbProj.projectCd,
     name: dbProj.prjNm,
     client: dbProj.customerName,
     department: dbProj.prjType || 'ZO',
-    status,
+    status: dbProj.paymentStatus,
     poCount: dbProj.noOfPo || 0,
     poAmount: dbProj.poAmount || 0,
     invoiceAmount: dbProj.totalInvoiceAmount || 0,
@@ -52,7 +39,9 @@ const mapDbProjectToProject = (dbProj: DatabaseProject): Project => {
     duration: '18 Months',
     manager: dbProj.prjMgrId ? `PM-${dbProj.prjMgrId}` : 'Regional Manager',
     priority: (dbProj.poAmount || 0) > 1000000 ? 'High' : (dbProj.poAmount || 0) > 200000 ? 'Medium' : 'Low',
-    healthScore: 100
+    healthScore: 100,
+    amountReceived: dbProj.amountReceived || 0,
+    createdOn: dbProj.createdOn || ''
   };
 };
 
@@ -90,16 +79,42 @@ const setStorageItem = <T>(key: string, data: T[]): void => {
   localStorage.setItem(key, JSON.stringify(data));
 };
 
+export interface ProjectFilters {
+  search?: string;
+  paymentStatus?: string;
+  projectType?: string;
+  sortBy?: string;
+  sortOrder?: string;
+  amountField?: string;
+  minAmount?: string;
+  maxAmount?: string;
+  dateFrom?: string;
+  dateTo?: string;
+  noPoYet?: boolean;
+  taxInvoiceOutstanding?: boolean;
+}
+
 // API calls returning promises to simulate async REST operations
 export const api = {
   // PROJECTS
-  getProjects: async (): Promise<Project[]> => {
-    const res = await fetch(`${API_URL}/api/projects`);
+  getProjects: async (filters?: ProjectFilters): Promise<Project[]> => {
+    const url = new URL(`${API_URL}/api/projects`);
+    if (filters) {
+      Object.entries(filters).forEach(([key, val]) => {
+        if (val !== undefined && val !== null && val !== '') {
+          url.searchParams.append(key, String(val));
+        }
+      });
+    }
+    const res = await fetch(url.toString());
     if (!res.ok) {
       throw new Error('Failed to fetch projects from server');
     }
     const json = await res.json();
-    return json.data.map(mapDbProjectToProject);
+    const projectsArray = json.data.map(mapDbProjectToProject);
+    // Attach the total count as a custom property on the array for footer metrics
+    (projectsArray as any).totalCount = json.count;
+    return projectsArray;
   },
   
   getProjectById: async (id: string): Promise<Project | undefined> => {
@@ -110,6 +125,14 @@ export const api = {
     const json = await res.json();
     const projects: Project[] = json.data.map(mapDbProjectToProject);
     return projects.find(p => p.id === id);
+  },
+
+  getProjectTypes: async (): Promise<string[]> => {
+    const res = await fetch(`${API_URL}/api/projects/types`);
+    if (!res.ok) {
+      throw new Error('Failed to fetch project types');
+    }
+    return res.json();
   },
 
   createProject: async (project: Omit<Project, 'poCount' | 'poAmount' | 'invoiceAmount' | 'amountPaid' | 'taxInvoiceAmount' | 'healthScore'>): Promise<Project> => {

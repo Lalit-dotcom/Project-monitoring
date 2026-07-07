@@ -24,4 +24,5 @@ export interface Project {
   hodEmail: string | null;
   nicCordEmailId: string | null;
   staffEmailId: string | null;
+  paymentStatus: 'Fully Paid' | 'Partially Paid' | 'No Invoices Yet';
 }

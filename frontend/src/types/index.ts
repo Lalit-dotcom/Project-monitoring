@@ -15,6 +15,8 @@ export interface Project {
   manager: string;
   priority: 'High' | 'Medium' | 'Low';
   healthScore: number;
+  amountReceived: number;
+  createdOn: string;
 }
 
 export interface Invoice {
@@ -103,5 +105,6 @@ export interface DatabaseProject {
   hodEmail: string | null;
   nicCordEmailId: string | null;
   staffEmailId: string | null;
+  paymentStatus: 'Fully Paid' | 'Partially Paid' | 'No Invoices Yet';
 }
 
