@@ -12,8 +12,20 @@ import {
   FileText,
   MapPin,
   AlertCircle,
-  MoreVertical
+  MoreVertical,
+  ShoppingCart
 } from 'lucide-react';
+import {
+  ComposedChart,
+  Bar,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  ResponsiveContainer,
+  Cell
+} from 'recharts';
+import { useTheme } from '../context/ThemeContext';
 import { api } from '../lib/api';
 import type { Project, Invoice, PurchaseOrder, TaxInvoice, Activity } from '../types';
 import { Toast } from '../components/Toast';
@@ -24,6 +36,7 @@ export const ProjectDetail: React.FC = () => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const { searchQuery } = useOutletContext<{ searchQuery: string }>();
+  const { theme } = useTheme();
 
   const [project, setProject] = useState<Project | null>(null);
   const [invoices, setInvoices] = useState<Invoice[]>([]);
@@ -467,22 +480,118 @@ export const ProjectDetail: React.FC = () => {
               )}
 
               {/* OVERVIEW TAB */}
-              {activeTab === 'Overview' && (
-                <div className="p-6 space-y-4 font-sans">
-                  <h4 className="font-headline text-lg font-bold text-on-surface">Detailed Scope</h4>
-                  <p className="text-secondary text-sm leading-relaxed">{project.description}</p>
-                  <div className="grid grid-cols-2 gap-4 pt-4 border-t border-outline-variant">
-                    <div>
-                      <span className="text-xs text-secondary font-bold font-headline uppercase block">Client Entity</span>
-                      <span className="font-semibold text-sm">{project.client}</span>
+              {activeTab === 'Overview' && (() => {
+                // Build chart data from the current project's fields
+                const budget = project.prjBudgetNo ?? 0;
+                const poAmount = project.poAmount ?? 0;
+                const received = project.amountPaid ?? 0;
+                const poCount = project.noOfPo ?? 0;
+
+                const barColors = theme === 'dark'
+                  ? { budget: '#6bd8cb', po: '#c0c6db', received: '#d4a847', axis: '#bcc9c6', grid: 'rgba(188,201,198,0.08)', tooltipBg: '#272b2a', tooltipText: '#e1e3e2' }
+                  : { budget: '#00685f', po: '#575e70', received: '#b8860b', axis: '#6d7a77', grid: 'rgba(0,0,0,0.04)', tooltipBg: '#191c1d', tooltipText: '#f0f1f2' };
+
+                const chartData = [
+                  { name: 'Budget', value: budget, color: barColors.budget },
+                  { name: 'PO Amount', value: poAmount, color: barColors.po },
+                  { name: 'Received', value: received, color: barColors.received },
+                ];
+
+                const formatINRLocal = (val: number) => {
+                  if (val >= 10000000) return `₹${(val / 10000000).toFixed(2)} Cr`;
+                  if (val >= 100000) return `₹${(val / 100000).toFixed(2)} L`;
+                  return `₹${val.toLocaleString('en-IN')}`;
+                };
+
+                const FinancialTooltip = ({ active, payload }: any) => {
+                  if (!active || !payload?.length) return null;
+                  return (
+                    <div style={{ backgroundColor: barColors.tooltipBg, border: 'none', borderRadius: 8, padding: '8px 14px', color: barColors.tooltipText, fontFamily: 'Inter', fontSize: 12 }}>
+                      <p style={{ fontFamily: 'Geist', fontWeight: 700, marginBottom: 4 }}>{payload[0]?.payload?.name}</p>
+                      <span style={{ fontWeight: 600 }}>{formatINRLocal(payload[0]?.value ?? 0)}</span>
                     </div>
-                    <div>
-                      <span className="text-xs text-secondary font-bold font-headline uppercase block">Administrative Department</span>
-                      <span className="font-semibold text-sm">{project.department}</span>
+                  );
+                };
+
+                return (
+                  <div className="p-6 space-y-6 font-sans">
+                    {/* Chart title row + PO count badge */}
+                    <div className="flex flex-wrap items-center justify-between gap-3">
+                      <div>
+                        <h4 className="font-headline text-base font-bold text-on-surface">Budget vs PO vs Received</h4>
+                        <p className="font-sans text-xs text-secondary mt-0.5">Single-project financial comparison</p>
+                      </div>
+                      <span
+                        className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full font-headline text-xs font-bold bg-surface-container text-secondary border border-outline-variant"
+                        aria-label={`${poCount} Purchase Orders linked to this project`}
+                      >
+                        <ShoppingCart className="w-3.5 h-3.5 opacity-70" aria-hidden="true" />
+                        {poCount} Purchase Order{poCount !== 1 ? 's' : ''}
+                      </span>
+                    </div>
+
+                    {/* Bar chart */}
+                    <div className="h-[220px] w-full">
+                      <ResponsiveContainer width="100%" height="100%">
+                        <ComposedChart data={chartData} margin={{ top: 8, right: 16, left: 8, bottom: 4 }} barCategoryGap="35%">
+                          <CartesianGrid vertical={false} stroke={barColors.grid} />
+                          <XAxis
+                            dataKey="name"
+                            stroke={barColors.axis}
+                            fontSize={11}
+                            fontFamily="Geist"
+                            tick={{ fill: barColors.axis }}
+                            tickLine={false}
+                          />
+                          <YAxis
+                            stroke={barColors.axis}
+                            fontSize={10}
+                            fontFamily="Geist"
+                            tick={{ fill: barColors.axis }}
+                            tickLine={false}
+                            tickFormatter={formatINRLocal}
+                            width={80}
+                          />
+                          <Tooltip content={<FinancialTooltip />} cursor={{ fill: 'rgba(0,0,0,0.04)' }} />
+                          <Bar dataKey="value" radius={[4, 4, 0, 0]}>
+                            {chartData.map((entry, index) => (
+                              <Cell key={`cell-${index}`} fill={entry.color} fillOpacity={0.9} />
+                            ))}
+                          </Bar>
+                        </ComposedChart>
+                      </ResponsiveContainer>
+                    </div>
+
+                    {/* Legend swatches */}
+                    <div className="flex flex-wrap gap-5">
+                      {chartData.map(d => (
+                        <span key={d.name} className="flex items-center gap-1.5 font-headline text-xs font-semibold text-secondary">
+                          <span className="w-2.5 h-2.5 rounded-sm" style={{ background: d.color }} />
+                          {d.name}
+                        </span>
+                      ))}
+                    </div>
+
+                    {/* Scope text + metadata grid */}
+                    <div className="space-y-4 pt-4 border-t border-outline-variant">
+                      <div>
+                        <h4 className="font-headline text-sm font-bold text-on-surface mb-1">Detailed Scope</h4>
+                        <p className="text-secondary text-sm leading-relaxed">{project.description}</p>
+                      </div>
+                      <div className="grid grid-cols-2 gap-4">
+                        <div>
+                          <span className="text-xs text-secondary font-bold font-headline uppercase block">Client Entity</span>
+                          <span className="font-semibold text-sm">{project.client}</span>
+                        </div>
+                        <div>
+                          <span className="text-xs text-secondary font-bold font-headline uppercase block">Administrative Department</span>
+                          <span className="font-semibold text-sm">{project.department}</span>
+                        </div>
+                      </div>
                     </div>
                   </div>
-                </div>
-              )}
+                );
+              })()}
 
               {/* BILL DESK TAB */}
               {activeTab === 'Bill Desk' && (

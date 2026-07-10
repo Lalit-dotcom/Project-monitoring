@@ -3,11 +3,14 @@ import { useOutletContext, useNavigate } from 'react-router-dom';
 import {
   Area,
   Line,
+  Bar,
   XAxis,
   YAxis,
   Tooltip,
   ResponsiveContainer,
-  ComposedChart
+  ComposedChart,
+  Legend,
+  CartesianGrid
 } from 'recharts';
 import {
   Wallet,
@@ -76,6 +79,7 @@ export const Dashboard: React.FC = () => {
   const [activities, setActivities] = useState<Activity[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
   const [chartData, setChartData] = useState<any[]>([]);
+  const [comparisonData, setComparisonData] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -85,10 +89,12 @@ export const Dashboard: React.FC = () => {
         const acts = await api.getActivities();
         const projs = await api.getProjects();
         const charts = await api.getDashboardCharts();
+        const comparison = await api.getDashboardProjectComparison();
         setMetrics(mets);
         setActivities(acts.slice(0, 5));
         setProjects(projs);
         setChartData(charts);
+        setComparisonData(comparison.projectComparison ?? []);
       } catch (err) {
         console.error(err);
         toast.error("Couldn't load Dashboard — check your connection");
@@ -129,6 +135,42 @@ export const Dashboard: React.FC = () => {
   const chartColors = theme === 'dark'
     ? { axis: '#bcc9c6', tooltipBg: '#272b2a', tooltipText: '#e1e3e2', areaStroke: '#6bd8cb', areaFill: 'rgba(107,216,203,0.05)', lineStroke: '#889390' }
     : { axis: '#6d7a77', tooltipBg: '#191c1d', tooltipText: '#f0f1f2', areaStroke: '#00685f', areaFill: 'rgba(0,104,95,0.05)', lineStroke: '#bcc9c6' };
+
+  // Colors for the cross-project comparison combo chart
+  const comboColors = theme === 'dark'
+    ? { budget: '#6bd8cb', received: '#c0c6db', poLine: '#d4a847', axis: '#bcc9c6', tooltipBg: '#272b2a', tooltipText: '#e1e3e2', grid: 'rgba(188,201,198,0.08)' }
+    : { budget: '#00685f', received: '#575e70', poLine: '#b8860b', axis: '#6d7a77', tooltipBg: '#191c1d', tooltipText: '#f0f1f2', grid: 'rgba(0,0,0,0.04)' };
+
+  const formatCr = (val: number) => {
+    if (val >= 10000000) return `₹${(val / 10000000).toFixed(1)}Cr`;
+    if (val >= 100000) return `₹${(val / 100000).toFixed(1)}L`;
+    return `₹${val.toLocaleString('en-IN')}`;
+  };
+
+  // Truncate long project names for X-axis labels
+  const truncateName = (name: string) => name && name.length > 10 ? name.slice(0, 10) + '…' : (name || '');
+
+  // Custom tooltip for combo chart
+  const ComboTooltip = ({ active, payload, label }: any) => {
+    if (!active || !payload || !payload.length) return null;
+    const row = comparisonData.find(d => d.projectCode === label);
+    return (
+      <div style={{ backgroundColor: comboColors.tooltipBg, border: 'none', borderRadius: 8, padding: '10px 14px', color: comboColors.tooltipText, fontFamily: 'Inter', fontSize: 12 }}>
+        <p style={{ fontFamily: 'Geist', fontWeight: 700, marginBottom: 6, color: comboColors.tooltipText }}>
+          {row?.projectName || label}
+        </p>
+        {payload.map((p: any) => (
+          <div key={p.dataKey} style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 2 }}>
+            <span style={{ width: 8, height: 8, borderRadius: '50%', background: p.color, display: 'inline-block' }} />
+            <span style={{ opacity: 0.75 }}>{p.name}:</span>
+            <span style={{ fontWeight: 600 }}>
+              {p.dataKey === 'poCount' ? p.value : formatCr(p.value)}
+            </span>
+          </div>
+        ))}
+      </div>
+    );
+  };
 
   return (
     <div className="space-y-stack-lg">
@@ -243,6 +285,133 @@ export const Dashboard: React.FC = () => {
               </ComposedChart>
             </ResponsiveContainer>
           </div>
+        </div>
+
+        {/* Cross-Project Comparison Combo Chart */}
+        <div className="lg:col-span-3 bg-surface-container-lowest border border-outline-variant p-6 rounded-md flex flex-col">
+          <div className="flex flex-wrap justify-between items-start mb-4 gap-3">
+            <div>
+              <h3 className="font-headline text-lg font-bold text-on-surface">Budget, Received &amp; PO Count by Project</h3>
+              <p className="font-sans text-xs text-secondary mt-0.5">Top 10 projects ranked by budget — dual-scale chart</p>
+            </div>
+            <div className="flex flex-wrap gap-4">
+              <span className="flex items-center gap-1.5 font-headline text-xs font-semibold text-secondary">
+                <span className="w-2.5 h-2.5 rounded-sm" style={{ background: comboColors.budget }} aria-hidden="true" />
+                Budget
+              </span>
+              <span className="flex items-center gap-1.5 font-headline text-xs font-semibold text-secondary">
+                <span className="w-2.5 h-2.5 rounded-sm" style={{ background: comboColors.received }} aria-hidden="true" />
+                Amount Received
+              </span>
+              <span className="flex items-center gap-1.5 font-headline text-xs font-semibold text-secondary">
+                <span className="w-2.5 h-1 rounded-full" style={{ background: comboColors.poLine }} aria-hidden="true" />
+                No. of PO
+                <span className="text-[10px] opacity-60 ml-0.5">(right axis)</span>
+              </span>
+            </div>
+          </div>
+
+          {comparisonData.length === 0 ? (
+            <div className="flex-1 flex items-center justify-center text-secondary font-sans text-sm">
+              No project data available.
+            </div>
+          ) : (
+            <div className="h-[340px] w-full">
+              <ResponsiveContainer width="100%" height="100%">
+                <ComposedChart
+                  data={comparisonData}
+                  margin={{ top: 10, right: 56, left: 12, bottom: 50 }}
+                  barCategoryGap="28%"
+                  barGap={3}
+                >
+                  <CartesianGrid vertical={false} stroke={comboColors.grid} />
+                  {/* X-axis: project code, angled for readability */}
+                  <XAxis
+                    dataKey="projectCode"
+                    stroke={comboColors.axis}
+                    fontSize={10}
+                    fontFamily="Geist"
+                    tick={{ fill: comboColors.axis, fontSize: 10 }}
+                    tickLine={false}
+                    interval={0}
+                    angle={-40}
+                    textAnchor="end"
+                    height={56}
+                  />
+                  {/* Left Y-axis: currency (₹) */}
+                  <YAxis
+                    yAxisId="money"
+                    orientation="left"
+                    stroke={comboColors.axis}
+                    fontSize={10}
+                    fontFamily="Geist"
+                    tick={{ fill: comboColors.axis, fontSize: 10 }}
+                    tickLine={false}
+                    tickFormatter={formatCr}
+                    label={{
+                      value: '₹',
+                      angle: 0,
+                      position: 'insideTopLeft',
+                      dx: -6,
+                      dy: -4,
+                      style: { fontFamily: 'Geist', fontSize: 12, fontWeight: 700, fill: comboColors.budget }
+                    }}
+                    width={72}
+                  />
+                  {/* Right Y-axis: PO count */}
+                  <YAxis
+                    yAxisId="count"
+                    orientation="right"
+                    stroke={comboColors.axis}
+                    fontSize={10}
+                    fontFamily="Geist"
+                    tick={{ fill: comboColors.axis, fontSize: 10 }}
+                    tickLine={false}
+                    allowDecimals={false}
+                    label={{
+                      value: 'Count',
+                      angle: -90,
+                      position: 'insideRight',
+                      dx: 14,
+                      dy: 30,
+                      style: { fontFamily: 'Geist', fontSize: 10, fontWeight: 700, fill: comboColors.poLine }
+                    }}
+                    width={48}
+                  />
+                  <Tooltip content={<ComboTooltip />} cursor={{ fill: 'rgba(0,0,0,0.04)' }} />
+                  {/* Budget bar */}
+                  <Bar
+                    yAxisId="money"
+                    dataKey="budget"
+                    name="Budget"
+                    fill={comboColors.budget}
+                    fillOpacity={0.92}
+                    radius={[3, 3, 0, 0]}
+                  />
+                  {/* Received bar */}
+                  <Bar
+                    yAxisId="money"
+                    dataKey="received"
+                    name="Amount Received"
+                    fill={comboColors.received}
+                    fillOpacity={0.85}
+                    radius={[3, 3, 0, 0]}
+                  />
+                  {/* PO Count line */}
+                  <Line
+                    yAxisId="count"
+                    type="monotone"
+                    dataKey="poCount"
+                    name="No. of PO"
+                    stroke={comboColors.poLine}
+                    strokeWidth={2}
+                    dot={{ r: 4, fill: comboColors.poLine, strokeWidth: 2, stroke: theme === 'dark' ? '#272b2a' : '#fff' }}
+                    activeDot={{ r: 6 }}
+                  />
+                </ComposedChart>
+              </ResponsiveContainer>
+            </div>
+          )}
         </div>
 
         {/* Recent Activity Card */}

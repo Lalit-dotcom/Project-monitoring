@@ -4,7 +4,6 @@ import type { Project, Invoice, PurchaseOrder, TaxInvoice, BillDeskRecord, Activ
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:4000';
 
 let authToken: string | null = null;
-let refreshTokenVal: string | null = null;
 
 let onLogoutRedirect: (() => void) | null = null;
 let onTokenRefreshed: ((token: string) => void) | null = null;
@@ -13,16 +12,15 @@ export const setAuthToken = (token: string | null) => {
   authToken = token;
 };
 
-export const setRefreshToken = (token: string | null) => {
-  refreshTokenVal = token;
-};
-
 export const registerAuthCallbacks = (logoutCb: () => void, refreshCb: (token: string) => void) => {
   onLogoutRedirect = logoutCb;
   onTokenRefreshed = refreshCb;
 };
 
+let refreshPromise: Promise<string | null> | null = null;
+
 const fetchWithAuth = async (url: string, options: RequestInit = {}): Promise<Response> => {
+  options.credentials = 'include';
   const headers = new Headers(options.headers || {});
   if (authToken) {
     headers.set('Authorization', `Bearer ${authToken}`);
@@ -31,34 +29,50 @@ const fetchWithAuth = async (url: string, options: RequestInit = {}): Promise<Re
 
   let res = await fetch(url, options);
 
-  if (res.status === 401 && refreshTokenVal) {
-    try {
-      const refreshRes = await fetch(`${API_URL}/api/auth/refresh`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ refreshToken: refreshTokenVal })
-      });
-      
-      if (refreshRes.ok) {
-        const data = await refreshRes.json();
-        authToken = data.accessToken;
-        
-        if (onTokenRefreshed) {
-          onTokenRefreshed(data.accessToken);
+  // If unauthorized and we didn't just fail on the refresh attempt, try to refresh
+  if (res.status === 401 && !url.includes('/api/auth/refresh')) {
+    if (!refreshPromise) {
+      refreshPromise = (async () => {
+        try {
+          const refreshRes = await fetch(`${API_URL}/api/auth/refresh`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            credentials: 'include'
+          });
+          
+          if (refreshRes.ok) {
+            const data = await refreshRes.json();
+            authToken = data.accessToken;
+            
+            if (onTokenRefreshed) {
+              onTokenRefreshed(data.accessToken);
+            }
+            return data.accessToken;
+          } else {
+            if (onLogoutRedirect) {
+              onLogoutRedirect();
+            }
+            return null;
+          }
+        } catch (err) {
+          if (onLogoutRedirect) {
+            onLogoutRedirect();
+          }
+          return null;
+        } finally {
+          refreshPromise = null; // Clear the promise once done
         }
+      })();
+    }
 
-        headers.set('Authorization', `Bearer ${authToken}`);
-        options.headers = headers;
-        res = await fetch(url, options);
-      } else {
-        if (onLogoutRedirect) {
-          onLogoutRedirect();
-        }
-      }
-    } catch (err) {
-      if (onLogoutRedirect) {
-        onLogoutRedirect();
-      }
+    // Wait for the single active refresh operation (whether we initiated it or someone else did)
+    const newAccessToken = await refreshPromise;
+    
+    if (newAccessToken) {
+      // Retry the original request with the new token
+      headers.set('Authorization', `Bearer ${newAccessToken}`);
+      options.headers = headers;
+      res = await fetch(url, options);
     }
   } else if (res.status === 401) {
     if (onLogoutRedirect) {
@@ -467,6 +481,17 @@ export const api = {
     return res.json();
   },
 
+  getDashboardProjectComparison: async (prjMgrId?: number | null): Promise<{ projectComparison: any[] }> => {
+    const params = new URLSearchParams();
+    if (prjMgrId != null) params.set('prjMgrId', String(prjMgrId));
+    const query = params.toString() ? `?${params.toString()}` : '';
+    const res = await fetchWithAuth(`${API_URL}/api/dashboard/project-comparison${query}`);
+    if (!res.ok) {
+      throw new Error('Failed to fetch project comparison');
+    }
+    return res.json();
+  },
+
   // MANAGERS (SUPERADMIN ONLY)
   getManagers: async (): Promise<any[]> => {
     const res = await fetchWithAuth(`${API_URL}/api/managers`);
@@ -491,6 +516,83 @@ export const api = {
     if (!res.ok) {
       const err = await res.json();
       throw new Error(err.error || 'Failed to create manager');
+    }
+    return res.json();
+  },
+
+  // SESSIONS
+  getSessions: async (): Promise<any[]> => {
+    const res = await fetchWithAuth(`${API_URL}/api/auth/sessions`);
+    if (!res.ok) {
+      throw new Error('Failed to fetch active sessions');
+    }
+    return res.json();
+  },
+
+  revokeSession: async (id: number): Promise<any> => {
+    const res = await fetchWithAuth(`${API_URL}/api/auth/sessions/${id}`, {
+      method: 'DELETE'
+    });
+    if (!res.ok) {
+      const err = await res.json();
+      throw new Error(err.error || 'Failed to revoke session');
+    }
+    return res.json();
+  },
+
+  revokeOtherSessions: async (): Promise<any> => {
+    const res = await fetchWithAuth(`${API_URL}/api/auth/sessions/others`, {
+      method: 'DELETE'
+    });
+    if (!res.ok) {
+      const err = await res.json();
+      throw new Error(err.error || 'Failed to revoke other sessions');
+    }
+    return res.json();
+  },
+
+  // 2FA TOTP (SUPERADMIN ONLY)
+  setup2FA: async (): Promise<{ secret: string; qrCodeDataUrl: string }> => {
+    const res = await fetchWithAuth(`${API_URL}/api/auth/2fa/setup`, {
+      method: 'POST'
+    });
+    if (!res.ok) {
+      const err = await res.json();
+      throw new Error(err.error || 'Failed to initialize 2FA setup');
+    }
+    return res.json();
+  },
+
+  confirm2FA: async (code: string): Promise<{ backupCodes: string[] }> => {
+    const res = await fetchWithAuth(`${API_URL}/api/auth/2fa/confirm`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ code })
+    });
+    if (!res.ok) {
+      const err = await res.json();
+      throw new Error(err.error || 'Failed to confirm 2FA setup');
+    }
+    return res.json();
+  },
+
+  disable2FA: async (password: string): Promise<any> => {
+    const res = await fetchWithAuth(`${API_URL}/api/auth/2fa/disable`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ password })
+    });
+    if (!res.ok) {
+      const err = await res.json();
+      throw new Error(err.error || 'Failed to disable 2FA');
+    }
+    return res.json();
+  },
+
+  get2FAStatus: async (): Promise<{ enabled: boolean }> => {
+    const res = await fetchWithAuth(`${API_URL}/api/auth/2fa/status`);
+    if (!res.ok) {
+      throw new Error('Failed to fetch 2FA status');
     }
     return res.json();
   }
