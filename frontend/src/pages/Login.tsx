@@ -1,185 +1,272 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Briefcase, Eye, EyeOff, ArrowRight } from 'lucide-react';
+import { User, Lock, ArrowRight, Check } from 'lucide-react';
+import { useAuth } from '../context/AuthContext';
+import { toast } from '../lib/toast';
 
 export const Login: React.FC = () => {
   const navigate = useNavigate();
+  const { login } = useAuth();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [rememberMe, setRememberMe] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    // Simulate authentication and route to dashboard
-    navigate('/dashboard');
+    setIsSubmitting(true);
+    try {
+      await login(email, password);
+      toast.success('Signed in successfully — welcome back!');
+      navigate('/dashboard');
+    } catch (err: any) {
+      toast.error(`Login failed — ${err.message || 'Invalid username or password'}`);
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleSSOLogin = () => {
+    toast.info('Single Sign-On (SSO) integration is coming soon.');
   };
 
   return (
-    <main className="flex min-h-screen w-full bg-surface text-on-surface">
-      {/* Left Side: Brand Panel */}
-      <section className="hidden lg:flex lg:w-1/2 bg-primary relative overflow-hidden flex-col justify-between p-12">
-        {/* Dot grid texture */}
-        <div 
-          className="absolute inset-0 opacity-10 pointer-events-none" 
-          style={{ 
-            backgroundImage: 'radial-gradient(#ffffff 1px, transparent 1px)', 
-            backgroundSize: '32px 32px' 
-          }} 
-        />
+    <main className="min-h-screen w-full flex items-center justify-center p-4 sm:p-6 md:p-8 bg-gradient-to-br from-[#0B1F3F] to-[#1B3E7A] font-sans antialiased overflow-y-auto">
+      {/* ─── Main Content Split Card ─── */}
+      <div className="w-full max-w-[1000px] min-h-[600px] bg-white rounded-3xl shadow-[0_20px_50px_rgba(11,31,63,0.25)] overflow-hidden flex flex-col md:flex-row transition-all duration-300">
         
-        {/* Top Logo Lockup */}
-        <div className="relative z-10">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 bg-on-primary-container rounded-lg flex items-center justify-center">
-              <Briefcase className="w-6 h-6 text-primary" />
-            </div>
-            <span className="font-headline text-3xl font-extrabold text-white tracking-tight">NPMS</span>
-          </div>
-        </div>
+        {/* Left Side: Brand Panel */}
+        <section 
+          className="w-full md:w-[45%] bg-gradient-to-br from-[#14335C] to-[#1B3E7A] relative overflow-hidden flex flex-col justify-between p-8 lg:p-10 text-white select-none shrink-0"
+        >
+          {/* Subtle abstract line/dot network background pattern in the corners */}
+          <div className="absolute inset-0 opacity-20 pointer-events-none" aria-hidden="true">
+            <svg width="100%" height="100%" xmlns="http://www.w3.org/2000/svg">
+              {/* Nodes and Connection Lines */}
+              <circle cx="15%" cy="15%" r="3" fill="#2DD4BF" />
+              <circle cx="35%" cy="20%" r="4" fill="#ffffff" />
+              <circle cx="10%" cy="40%" r="3" fill="#ffffff" />
+              <line x1="15%" y1="15%" x2="35%" y2="20%" stroke="rgba(255,255,255,0.25)" strokeWidth="1" />
+              <line x1="15%" y1="15%" x2="10%" y2="40%" stroke="rgba(255,255,255,0.25)" strokeWidth="1" />
 
-        {/* Content & Stat Card */}
-        <div className="relative z-10 space-y-8">
-          <div className="space-y-4">
-            <h2 className="font-headline text-4xl font-bold leading-tight text-white max-w-md">
-              Enterprise Billing &amp; Invoicing Reimagined.
-            </h2>
-            <p className="font-sans text-lg text-primary-fixed-dim max-w-sm">
-              Access your project portfolios, manage purchase orders, and streamline tax compliance with the industry's most trusted billing infrastructure.
-            </p>
-          </div>
-
-          {/* Stat Card */}
-          <div className="bg-white/10 backdrop-blur-md border border-white/20 p-6 rounded-xl w-fit flex gap-8">
-            <div>
-              <p className="font-headline text-[10px] text-primary-fixed-dim uppercase tracking-widest font-bold">Active Projects</p>
-              <p className="font-headline text-2xl font-bold text-white mt-1">1,284</p>
-            </div>
-            <div className="w-[1px] bg-white/20" />
-            <div>
-              <p className="font-headline text-[10px] text-primary-fixed-dim uppercase tracking-widest font-bold">Efficiency</p>
-              <p className="font-headline text-2xl font-bold text-white mt-1">99.8%</p>
-            </div>
-          </div>
-        </div>
-
-        {/* Bottom Copyright */}
-        <div className="relative z-10">
-          <p className="font-headline text-xs text-primary-fixed-dim">
-            &copy; 2026 National Project Management Systems. Institutional Reliability.
-          </p>
-        </div>
-
-        {/* Background Glow */}
-        <div className="absolute bottom-[-10%] right-[-10%] w-[80%] h-[80%] opacity-20 pointer-events-none">
-          <div className="w-full h-full rounded-full border-[60px] border-white/10" />
-        </div>
-      </section>
-
-      {/* Right Side: Login Form */}
-      <section className="w-full lg:w-1/2 flex items-center justify-center bg-surface p-6 md:p-12">
-        <div className="w-full max-w-[440px] space-y-10">
-          {/* Header */}
-          <div className="space-y-3">
-            <div className="lg:hidden mb-8">
-              <div className="flex items-center gap-3">
-                <div className="w-8 h-8 bg-primary rounded-lg flex items-center justify-center text-white">
-                  <Briefcase className="w-5 h-5" />
-                </div>
-                <span className="font-headline text-2xl font-extrabold text-on-surface">NPMS</span>
-              </div>
-            </div>
-            <h1 className="font-headline text-3xl font-bold text-on-surface">Welcome back</h1>
-            <p className="font-sans text-sm text-secondary">Please enter your institutional credentials to continue.</p>
+              <circle cx="90%" cy="85%" r="4" fill="#2DD4BF" />
+              <circle cx="75%" cy="70%" r="3" fill="#ffffff" />
+              <circle cx="85%" cy="60%" r="4" fill="#ffffff" />
+              <line x1="90%" y1="85%" x2="75%" y2="70%" stroke="rgba(255,255,255,0.25)" strokeWidth="1" />
+              <line x1="90%" y1="85%" x2="85%" y2="60%" stroke="rgba(255,255,255,0.25)" strokeWidth="1" />
+            </svg>
           </div>
 
-          {/* Form */}
-          <form className="space-y-6" onSubmit={handleSubmit}>
-            {/* Email Field */}
-            <div className="space-y-2">
-              <label className="font-headline text-xs font-semibold text-secondary uppercase tracking-wider" htmlFor="email">
-                Email Address
-              </label>
-              <input
-                id="email"
-                type="email"
-                required
-                className="w-full"
-                placeholder="name@company.com"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
+          {/* Top Logo Chip */}
+          <div className="relative z-10 self-start">
+            <div className="bg-white rounded-lg p-2 flex items-center justify-center shadow-md">
+              <img 
+                src="/nicsilogo.jpg.jpeg" 
+                alt="NICSI Logo" 
+                className="h-8 object-contain"
               />
             </div>
+          </div>
 
-            {/* Password Field */}
-            <div className="space-y-2">
-              <div className="flex justify-between items-center">
-                <label className="font-headline text-xs font-semibold text-secondary uppercase tracking-wider" htmlFor="password">
-                  Password
-                </label>
-                <a href="#" className="font-headline text-xs font-semibold text-primary hover:underline">
-                  Forgot password?
-                </a>
+          {/* Center Brand Text */}
+          <div className="relative z-10 my-10 md:my-0 space-y-6">
+            <span className="text-[10px] uppercase font-bold tracking-widest text-[#A8C1E0] block">
+              PROJECT MONITORING SYSTEM
+            </span>
+            <h2 className="font-headline text-3xl lg:text-4xl font-extrabold leading-tight text-white tracking-tight">
+              Welcome to NPMS
+            </h2>
+            <p className="font-sans text-sm text-[#C5D5EC] leading-relaxed">
+              Billing &amp; Invoice Management for NICSI Zonal Office Operations.
+            </p>
+
+            {/* Feature List */}
+            <div className="space-y-3 pt-2">
+              <div className="flex items-center gap-2 text-xs font-semibold text-white/90">
+                <span className="w-5 h-5 rounded-full bg-[#2DD4BF]/10 flex items-center justify-center text-[#2DD4BF] shrink-0">
+                  <Check className="w-3.5 h-3.5" />
+                </span>
+                <span>Project &amp; Purchase Order tracking</span>
               </div>
+              <div className="flex items-center gap-2 text-xs font-semibold text-white/90">
+                <span className="w-5 h-5 rounded-full bg-[#2DD4BF]/10 flex items-center justify-center text-[#2DD4BF] shrink-0">
+                  <Check className="w-3.5 h-3.5" />
+                </span>
+                <span>Tax invoice management</span>
+              </div>
+              <div className="flex items-center gap-2 text-xs font-semibold text-white/90">
+                <span className="w-5 h-5 rounded-full bg-[#2DD4BF]/10 flex items-center justify-center text-[#2DD4BF] shrink-0">
+                  <Check className="w-3.5 h-3.5" />
+                </span>
+                <span>Secure role-based access</span>
+              </div>
+            </div>
+          </div>
+
+          {/* Zonal Credibility Info */}
+          <div className="relative z-10 pt-4 border-t border-white/10">
+            <p className="font-sans text-[10px] text-[#8FA8CC] leading-relaxed">
+              A Section 8 Company under NIC, MeitY, Government of India
+            </p>
+          </div>
+        </section>
+
+        {/* Right Side: Form Panel */}
+        <section 
+          className="flex-1 bg-white p-8 sm:p-10 md:p-12 lg:p-14 flex flex-col justify-between relative"
+        >
+          {/* Top Lockup Row */}
+          <div className="flex items-center justify-end text-xs text-gray-400 font-semibold gap-2 z-10 mb-6 md:mb-0 select-none">
+            <img 
+              src="/government_of_india_official_logo.jpg" 
+              alt="Government of India Emblem" 
+              className="h-6 object-contain mix-blend-multiply"
+            />
+            <span className="text-[#6B7280]">Government of India</span>
+          </div>
+
+          {/* Center Form Section */}
+          <div className="space-y-6 my-auto max-w-[380px] w-full mx-auto">
+            <div className="space-y-1.5">
+              <h1 className="font-headline text-3xl font-extrabold text-[#14335C] tracking-tight">
+                Sign in
+              </h1>
+              <p className="font-sans text-xs text-[#6B7280]">
+                Enter your credentials to access the dashboard
+              </p>
+            </div>
+
+            {/* Form inputs */}
+            <form className="space-y-4" onSubmit={handleSubmit} aria-label="Login form">
+              
+              {/* Username Input */}
               <div className="relative group">
-                <input
+                <div className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400 group-focus-within:text-[#0D9488] transition-colors pointer-events-none">
+                  <User className="w-5 h-5" />
+                </div>
+                <input 
+                  id="username"
+                  type="text"
+                  required
+                  placeholder="Username"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  autoComplete="username"
+                  className="w-full h-12 pl-11 pr-4 rounded-xl bg-[#F3F4F6] text-sm text-[#14335C] placeholder-gray-400 border-none outline-none focus:bg-white focus:ring-2 focus:ring-[#0D9488] transition-all"
+                  aria-label="Username"
+                />
+              </div>
+
+              {/* Password Input */}
+              <div className="relative group">
+                <div className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400 group-focus-within:text-[#0D9488] transition-colors pointer-events-none">
+                  <Lock className="w-5 h-5" />
+                </div>
+                <input 
                   id="password"
                   type={showPassword ? 'text' : 'password'}
                   required
-                  className="w-full pr-12"
-                  placeholder="••••••••"
+                  placeholder="Password"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
+                  autoComplete="current-password"
+                  className="w-full h-12 pl-11 pr-16 rounded-xl bg-[#F3F4F6] text-sm text-[#14335C] placeholder-gray-400 border-none outline-none focus:bg-white focus:ring-2 focus:ring-[#0D9488] transition-all"
+                  aria-label="Password"
                 />
                 <button
                   type="button"
                   onClick={() => setShowPassword(!showPassword)}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-outline hover:text-on-surface transition-colors"
+                  className="absolute right-4 top-1/2 -translate-y-1/2 font-headline text-xs font-bold text-[#0D9488] hover:text-[#0F766E] transition-colors focus:outline-none"
+                  aria-label={showPassword ? 'Hide password' : 'Show password'}
                 >
-                  {showPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
+                  {showPassword ? 'Hide' : 'Show'}
                 </button>
               </div>
-            </div>
 
-            {/* Remember Me Checkbox */}
-            <div className="flex items-center gap-2">
-              <input
-                id="remember"
-                type="checkbox"
-                className="w-4 h-4 rounded border-outline-variant text-primary focus:ring-primary focus:bg-white"
-                checked={rememberMe}
-                onChange={(e) => setRememberMe(e.target.checked)}
-              />
-              <label htmlFor="remember" className="font-sans text-sm text-secondary select-none">
-                Remember this device for 30 days
-              </label>
-            </div>
+              {/* Checkbox Row */}
+              <div className="flex items-center justify-between text-xs select-none">
+                <div className="flex items-center gap-2 cursor-pointer">
+                  <input 
+                    id="remember"
+                    type="checkbox"
+                    checked={rememberMe}
+                    onChange={(e) => setRememberMe(e.target.checked)}
+                    className="w-4 h-4 rounded border-[#E2E8F0] text-[#0D9488] focus:ring-[#0D9488] cursor-pointer"
+                  />
+                  <label htmlFor="remember" className="text-[#6B7280] cursor-pointer font-sans">
+                    Remember me
+                  </label>
+                </div>
+                <a 
+                  href="#"
+                  onClick={(e) => {
+                    e.preventDefault();
+                    toast.info('Please contact your zonal administrator to reset credentials.');
+                  }}
+                  className="font-headline font-bold text-[#0D9488] hover:underline"
+                >
+                  Forgot Password?
+                </a>
+              </div>
 
-            {/* Submit Button */}
-            <button
-              type="submit"
-              className="w-full bg-primary hover:bg-primary-container text-on-primary font-headline text-sm font-semibold h-10 rounded-lg flex items-center justify-center gap-2 transition-colors shadow-sm"
+              {/* Action Buttons */}
+              <div className="space-y-4 pt-2">
+                {/* Submit button */}
+                <button
+                  type="submit"
+                  disabled={isSubmitting}
+                  className="w-full h-12 bg-[#0D9488] hover:bg-[#0F766E] text-white font-headline text-sm font-semibold rounded-xl flex items-center justify-center gap-2 shadow-sm transition-all duration-200 hover:scale-[1.01] active:scale-[0.99] disabled:opacity-60 disabled:cursor-not-allowed focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0D9488] focus-visible:ring-offset-2"
+                >
+                  {isSubmitting ? (
+                    <>
+                      <span className="w-4 h-4 border-2 border-white/40 border-t-white rounded-full animate-spin" aria-hidden="true" />
+                      <span>Signing in...</span>
+                    </>
+                  ) : (
+                    <>
+                      <span>Sign In</span>
+                      <ArrowRight className="w-4 h-4" aria-hidden="true" />
+                    </>
+                  )}
+                </button>
+
+                {/* Divider Row */}
+                <div className="relative flex py-1 items-center select-none">
+                  <div className="flex-grow border-t border-gray-100"></div>
+                  <span className="flex-shrink mx-3 text-[10px] text-gray-400 uppercase tracking-widest font-bold">Or</span>
+                  <div className="flex-grow border-t border-gray-100"></div>
+                </div>
+
+                {/* SSO Button */}
+                <button
+                  type="button"
+                  onClick={handleSSOLogin}
+                  className="w-full h-12 border border-[#1B3E7A] text-[#1B3E7A] hover:bg-[#1B3E7A]/5 font-headline text-xs font-semibold rounded-xl flex items-center justify-center gap-2 transition-all"
+                >
+                  <span>Sign in with Government SSO</span>
+                </button>
+              </div>
+            </form>
+          </div>
+
+          {/* Bottom Lockup */}
+          <div className="text-center text-xs text-gray-400 font-medium pt-6 select-none md:mt-0">
+            <span>Need access? </span>
+            <a 
+              href="#"
+              onClick={(e) => {
+                e.preventDefault();
+                toast.info('Access requests must be approved by the zonal NICSI coordinator.');
+              }}
+              className="text-[#0D9488] hover:underline font-bold"
             >
-              <span>Sign In</span>
-              <ArrowRight className="w-4 h-4" />
-            </button>
-          </form>
-
-          {/* Contact Admin */}
-          <div className="border-t border-outline-variant pt-6 text-center">
-            <p className="font-sans text-sm text-secondary">
-              Don't have an account? <a href="#" className="text-primary hover:underline font-semibold">Contact your administrator</a>
-            </p>
+              Contact your administrator
+            </a>
           </div>
 
-          {/* Links footer */}
-          <div className="flex justify-center gap-6 font-headline text-[10px] text-secondary font-bold tracking-widest pt-4">
-            <a href="#" className="hover:text-on-surface transition-colors">PRIVACY POLICY</a>
-            <a href="#" className="hover:text-on-surface transition-colors">SECURITY</a>
-            <a href="#" className="hover:text-on-surface transition-colors font-bold">TERMS</a>
-          </div>
-        </div>
-      </section>
+        </section>
+      </div>
     </main>
   );
 };

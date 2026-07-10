@@ -2,6 +2,16 @@ import express from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
 import projectsRouter from './routes/projects.js';
+import authRouter from './routes/auth.js';
+import { requireAuth } from './middleware/requireAuth.js';
+import { scopeToOwnProjects } from './middleware/scopeToOwnProjects.js';
+import purchaseOrdersRouter from './routes/purchaseOrders.js';
+import invoicesRouter from './routes/invoices.js';
+import billDeskRouter from './routes/billDesk.js';
+import taxInvoicesRouter from './routes/taxInvoices.js';
+import pmSummaryRouter from './routes/pmSummary.js';
+import dashboardRouter from './routes/dashboard.js';
+import managersRouter from './routes/managers.js';
 
 // Load environmental variables
 dotenv.config();
@@ -9,16 +19,39 @@ dotenv.config();
 const app = express();
 const port = process.env.PORT || 4000;
 
-// Enable CORS for frontend origin
+// Enable CORS for frontend origins
+const allowedOrigins = [
+  'http://localhost:5173',
+  'http://localhost:5174',
+  'http://localhost:5175',
+  'http://127.0.0.1:5173',
+  'http://127.0.0.1:5174',
+  'http://127.0.0.1:5175'
+];
+
 app.use(cors({
-  origin: 'http://localhost:5173',
+  origin: (origin, callback) => {
+    if (!origin || allowedOrigins.includes(origin)) {
+      callback(null, true);
+    } else {
+      callback(new Error('Not allowed by CORS'));
+    }
+  },
   credentials: true
 }));
 
 app.use(express.json());
 
 // Routes registry
-app.use('/api/projects', projectsRouter);
+app.use('/api/auth', authRouter);
+app.use('/api/projects', requireAuth, scopeToOwnProjects, projectsRouter);
+app.use('/api/purchase-orders', requireAuth, scopeToOwnProjects, purchaseOrdersRouter);
+app.use('/api/invoices', requireAuth, scopeToOwnProjects, invoicesRouter);
+app.use('/api/bill-desk', requireAuth, scopeToOwnProjects, billDeskRouter);
+app.use('/api/tax-invoices', requireAuth, scopeToOwnProjects, taxInvoicesRouter);
+app.use('/api/pm-summary', requireAuth, scopeToOwnProjects, pmSummaryRouter);
+app.use('/api/dashboard', requireAuth, scopeToOwnProjects, dashboardRouter);
+app.use('/api/managers', requireAuth, managersRouter);
 
 // Health check endpoint
 app.get('/api/health', (req, res) => {

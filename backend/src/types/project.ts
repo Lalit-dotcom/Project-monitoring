@@ -2,6 +2,7 @@ export interface Project {
   headerId: number;
   projectId: number;
   prjMgrId: number | null;
+  prjMgrName: string | null;
   projectCd: string;
   prjNm: string;
   customerName: string;

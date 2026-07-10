@@ -128,8 +128,8 @@ export const Administration: React.FC = () => {
                         <td className="px-6 py-4">
                           <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold border uppercase tracking-wider ${
                             user.status === 'Active' 
-                              ? 'bg-green-50 text-green-700 border-green-200' 
-                              : 'bg-gray-100 text-gray-500 border-gray-200'
+                              ? 'bg-status-success-bg text-status-success-text border-status-success-border' 
+                              : 'bg-status-neutral-bg text-status-neutral-text border-status-neutral-border'
                           }`}>
                             {user.status}
                           </span>

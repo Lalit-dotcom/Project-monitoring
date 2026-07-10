@@ -22,8 +22,12 @@ import {
 } from 'lucide-react';
 import { api } from '../lib/api';
 import type { Project, Invoice } from '../types';
+import { useTheme } from '../context/ThemeContext';
+import { Breadcrumbs } from '../components/Breadcrumbs';
+import { toast } from '../lib/toast';
 
 export const Reports: React.FC = () => {
+  const { theme } = useTheme();
   const navigate = useNavigate();
   const [projects, setProjects] = useState<Project[]>([]);
   const [invoices, setInvoices] = useState<Invoice[]>([]);
@@ -40,6 +44,7 @@ export const Reports: React.FC = () => {
         setInvoices(invs);
       } catch (err) {
         console.error(err);
+        toast.error("Couldn't load Reports — check your connection");
       } finally {
         setLoading(false);
       }
@@ -73,7 +78,12 @@ export const Reports: React.FC = () => {
   ];
 
   // Aging Pie Chart Data
-  const agingData = [
+  const agingData = theme === 'dark' ? [
+    { name: 'Current (60%)', value: 60, color: '#6bd8cb' },
+    { name: '30-60d (25%)', value: 25, color: '#005049' },
+    { name: '60-90d (10%)', value: 10, color: '#c0c7d6' },
+    { name: '90+d (5%)', value: 5, color: '#ffb4ab' }
+  ] : [
     { name: 'Current (60%)', value: 60, color: '#00685f' },
     { name: '30-60d (25%)', value: 25, color: '#008378' },
     { name: '60-90d (10%)', value: 10, color: '#555c6a' },
@@ -88,14 +98,14 @@ export const Reports: React.FC = () => {
 
   // Outstanding sum for aging center text
   const totalOutstanding = invoices
-    .filter(i => i.status === 'Pending' || i.status === 'Overdue')
-    .reduce((sum, i) => sum + i.amount, 0);
+    .reduce((sum, i) => sum + (i.unpaid || 0), 0);
 
   return (
     <div className="space-y-stack-lg max-w-[1400px] mx-auto w-full">
       {/* Header and filters */}
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-stack-lg">
         <div>
+          <Breadcrumbs crumbs={[{ label: 'NPMS' }, { label: 'Reports' }]} />
           <h2 className="font-headline text-2xl font-bold text-on-surface">Financial Reports</h2>
           <p className="font-sans text-sm text-secondary">Analyze your revenue, payment cycles, and aging status.</p>
         </div>
@@ -160,22 +170,42 @@ export const Reports: React.FC = () => {
 
           {/* Recharts Revenue Line Graph */}
           <div className="w-full h-80">
-            <ResponsiveContainer width="100%" height="100%">
-              <LineChart data={lifecycleData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
-                <XAxis dataKey="name" stroke="#6d7a77" fontSize={11} fontFamily="Geist" />
-                <YAxis stroke="#6d7a77" fontSize={11} fontFamily="Geist" tickFormatter={(v) => `₹${v}Cr`} />
-                <Tooltip 
-                  contentStyle={{ backgroundColor: '#191c1d', border: 'none', borderRadius: '8px', color: '#ffffff' }}
-                  labelStyle={{ fontFamily: 'Geist', fontWeight: 'bold' }}
-                />
-                {/* PO Value - Dashed Line */}
-                <Line type="monotone" dataKey="PO" stroke="#008378" strokeDasharray="5 5" strokeWidth={2} dot={{ r: 3 }} />
-                {/* Received - Solid Teal */}
-                <Line type="monotone" dataKey="Received" stroke="#00685f" strokeWidth={3} dot={{ r: 4 }} />
-                {/* Paid - Solid Dark Gray */}
-                <Line type="monotone" dataKey="Paid" stroke="#555c6a" strokeWidth={2} dot={{ r: 3 }} />
-              </LineChart>
-            </ResponsiveContainer>
+            {(() => {
+              const chartColors = theme === 'dark' ? {
+                axis: '#bcc9c6',
+                tooltipBg: '#272b2a',
+                tooltipText: '#e1e3e2',
+                linePO: '#005049',
+                lineReceived: '#6bd8cb',
+                linePaid: '#c0c7d6',
+              } : {
+                axis: '#6d7a77',
+                tooltipBg: '#191c1d',
+                tooltipText: '#f0f1f2',
+                linePO: '#008378',
+                lineReceived: '#00685f',
+                linePaid: '#555c6a',
+              };
+
+              return (
+                <ResponsiveContainer width="100%" height="100%">
+                  <LineChart data={lifecycleData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+                    <XAxis dataKey="name" stroke={chartColors.axis} fontSize={11} fontFamily="Geist" />
+                    <YAxis stroke={chartColors.axis} fontSize={11} fontFamily="Geist" tickFormatter={(v) => `₹${v}Cr`} />
+                    <Tooltip 
+                      contentStyle={{ backgroundColor: chartColors.tooltipBg, border: 'none', borderRadius: '8px', color: chartColors.tooltipText }}
+                      labelStyle={{ fontFamily: 'Geist', fontWeight: 'bold' }}
+                    />
+                    {/* PO Value - Dashed Line */}
+                    <Line type="monotone" dataKey="PO" stroke={chartColors.linePO} strokeDasharray="5 5" strokeWidth={2} dot={{ r: 3 }} />
+                    {/* Received - Solid Teal */}
+                    <Line type="monotone" dataKey="Received" stroke={chartColors.lineReceived} strokeWidth={3} dot={{ r: 4 }} />
+                    {/* Paid - Solid Dark Gray */}
+                    <Line type="monotone" dataKey="Paid" stroke={chartColors.linePaid} strokeWidth={2} dot={{ r: 3 }} />
+                  </LineChart>
+                </ResponsiveContainer>
+              );
+            })()}
           </div>
         </div>
 

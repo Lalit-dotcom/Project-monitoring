@@ -1,6 +1,11 @@
 import { Router, Request, Response } from 'express';
 import { pool } from '../db.js';
 import type { Project } from '../types/project.js';
+import { 
+  getProjectsVendorOverpaidSql, 
+  getProjectsBillingAheadSql, 
+  getProjectsStalledSql 
+} from '../lib/riskFlags.js';
 
 const router = Router();
 
@@ -44,6 +49,7 @@ function mapRowToProject(row: any): Project {
     headerId: Number(row.header_id),
     projectId: Number(row.project_id),
     prjMgrId: row.prj_mgr_id ? Number(row.prj_mgr_id) : null,
+    prjMgrName: row.prj_mgr_name || null,
     projectCd: row.project_cd,
     prjNm: row.prj_nm,
     customerName: row.customer_name,
@@ -86,7 +92,22 @@ router.get('/types', async (req: Request, res: Response): Promise<void> => {
   }
 });
 
-// Get projects with filtering and sorting
+// Get project managers
+router.get('/managers', async (req: Request, res: Response): Promise<void> => {
+  try {
+    const result = await pool.query(
+      "SELECT prj_mgr_id, prj_mgr_name FROM project_managers ORDER BY prj_mgr_name ASC"
+    );
+    res.json(result.rows.map(row => ({ prjMgrId: row.prj_mgr_id, prjMgrName: row.prj_mgr_name })));
+  } catch (error: any) {
+    console.error('Database query error:', error);
+    res.status(500).json({
+      error: 'An internal server error occurred while retrieving project managers.'
+    });
+  }
+});
+
+// Get projects with filtering, sorting, tab counts, and pagination
 router.get('/', async (req: Request, res: Response): Promise<void> => {
   try {
     const conditions: string[] = [];
@@ -100,6 +121,14 @@ router.get('/', async (req: Request, res: Response): Promise<void> => {
         `(customer_name ILIKE $${paramIndex} OR prj_nm ILIKE $${paramIndex} OR project_cd ILIKE $${paramIndex})`
       );
       values.push(`%${search.trim()}%`);
+      paramIndex++;
+    }
+
+    // Project Manager filter
+    const prjMgrId = req.query.prjMgrId;
+    if (prjMgrId && typeof prjMgrId === 'string' && prjMgrId !== 'All' && prjMgrId.trim() !== '') {
+      conditions.push(`projects.prj_mgr_id = $${paramIndex}`);
+      values.push(parseInt(prjMgrId));
       paramIndex++;
     }
 
@@ -168,13 +197,29 @@ router.get('/', async (req: Request, res: Response): Promise<void> => {
 
     // Checkbox toggles
     const noPoYet = req.query.noPoYet;
-    if (noPoYet === 'true' || noPoYet === true) {
+    if (noPoYet === 'true') {
       conditions.push('no_of_po = 0');
     }
 
     const taxInvoiceOutstanding = req.query.taxInvoiceOutstanding;
-    if (taxInvoiceOutstanding === 'true' || taxInvoiceOutstanding === true) {
+    if (taxInvoiceOutstanding === 'true') {
       conditions.push('no_of_tax_invoice > 0 AND total_amount_paid < total_invoice_amount');
+    }
+
+    // Risk & Compliance Flags
+    const riskVendorOverpaid = req.query.riskVendorOverpaid;
+    if (riskVendorOverpaid === 'true') {
+      conditions.push(getProjectsVendorOverpaidSql());
+    }
+
+    const riskBillingAhead = req.query.riskBillingAhead;
+    if (riskBillingAhead === 'true') {
+      conditions.push(getProjectsBillingAheadSql());
+    }
+
+    const riskStalled = req.query.riskStalled;
+    if (riskStalled === 'true') {
+      conditions.push(getProjectsStalledSql());
     }
 
     // Sorting parameters
@@ -185,20 +230,33 @@ router.get('/', async (req: Request, res: Response): Promise<void> => {
     const sortOrderRaw = req.query.sortOrder;
     const sortOrder = (sortOrderRaw as string)?.toLowerCase() === 'asc' ? 'ASC' : 'DESC';
 
-    // Construct SQL Query projecting computed_payment_status
-    let queryText = `SELECT *, ${paymentStatusCaseSql} AS computed_payment_status FROM projects`;
+    // Pagination parameters
+    const page = parseInt(req.query.page as string) || 1;
+    const pageSize = parseInt(req.query.pageSize as string) || 9;
+    const offset = (page - 1) * pageSize;
+
+    // Construct SQL Query projecting computed_payment_status and COUNT(*) OVER()
+    let queryText = `
+      SELECT projects.*, project_managers.prj_mgr_name, 
+             ${paymentStatusCaseSql} AS computed_payment_status,
+             COUNT(*) OVER() AS full_count
+      FROM projects 
+      LEFT JOIN project_managers ON projects.prj_mgr_id = project_managers.prj_mgr_id
+    `.trim();
     if (conditions.length > 0) {
       queryText += ' WHERE ' + conditions.join(' AND ');
     }
     queryText += ` ORDER BY ${sortBy} ${sortOrder}, header_id ASC`;
+    queryText += ` LIMIT ${pageSize} OFFSET ${offset}`;
 
     // Query Postgres
     const result = await pool.query(queryText, values);
     const projects: Project[] = result.rows.map(mapRowToProject);
+    const totalCount = result.rows.length > 0 ? Number(result.rows[0].full_count) : 0;
 
     res.json({
       data: projects,
-      count: projects.length
+      count: totalCount
     });
   } catch (error: any) {
     console.error('Database query error:', error);

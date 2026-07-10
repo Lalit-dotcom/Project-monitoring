@@ -1,7 +1,74 @@
 import { mockInvoices, mockPurchaseOrders, mockTaxInvoices, mockActivities, mockNotifications, mockUsers } from '../data/mockData';
-import type { Project, Invoice, PurchaseOrder, TaxInvoice, Activity, Notification, User, DatabaseProject } from '../types';
+import type { Project, Invoice, PurchaseOrder, TaxInvoice, BillDeskRecord, Activity, Notification, User, DatabaseProject } from '../types';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:4000';
+
+let authToken: string | null = null;
+let refreshTokenVal: string | null = null;
+
+let onLogoutRedirect: (() => void) | null = null;
+let onTokenRefreshed: ((token: string) => void) | null = null;
+
+export const setAuthToken = (token: string | null) => {
+  authToken = token;
+};
+
+export const setRefreshToken = (token: string | null) => {
+  refreshTokenVal = token;
+};
+
+export const registerAuthCallbacks = (logoutCb: () => void, refreshCb: (token: string) => void) => {
+  onLogoutRedirect = logoutCb;
+  onTokenRefreshed = refreshCb;
+};
+
+const fetchWithAuth = async (url: string, options: RequestInit = {}): Promise<Response> => {
+  const headers = new Headers(options.headers || {});
+  if (authToken) {
+    headers.set('Authorization', `Bearer ${authToken}`);
+  }
+  options.headers = headers;
+
+  let res = await fetch(url, options);
+
+  if (res.status === 401 && refreshTokenVal) {
+    try {
+      const refreshRes = await fetch(`${API_URL}/api/auth/refresh`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ refreshToken: refreshTokenVal })
+      });
+      
+      if (refreshRes.ok) {
+        const data = await refreshRes.json();
+        authToken = data.accessToken;
+        
+        if (onTokenRefreshed) {
+          onTokenRefreshed(data.accessToken);
+        }
+
+        headers.set('Authorization', `Bearer ${authToken}`);
+        options.headers = headers;
+        res = await fetch(url, options);
+      } else {
+        if (onLogoutRedirect) {
+          onLogoutRedirect();
+        }
+      }
+    } catch (err) {
+      if (onLogoutRedirect) {
+        onLogoutRedirect();
+      }
+    }
+  } else if (res.status === 401) {
+    if (onLogoutRedirect) {
+      onLogoutRedirect();
+    }
+  }
+
+  return res;
+};
+
 
 // Mapping helper to map database format (camelCase) to UI expected format
 const getStateName = (cd: string): string => {
@@ -22,8 +89,9 @@ const getStateName = (cd: string): string => {
   return states[code] || 'Regional Office';
 };
 
-const mapDbProjectToProject = (dbProj: DatabaseProject): Project => {
+const mapDbProjectToProject = (dbProj: DatabaseProject): Project & DatabaseProject => {
   return {
+    ...dbProj,
     id: dbProj.projectCd,
     name: dbProj.prjNm,
     client: dbProj.customerName,
@@ -92,12 +160,87 @@ export interface ProjectFilters {
   dateTo?: string;
   noPoYet?: boolean;
   taxInvoiceOutstanding?: boolean;
+  riskVendorOverpaid?: boolean;
+  riskBillingAhead?: boolean;
+  riskStalled?: boolean;
+  page?: number;
+  pageSize?: number;
+  prjMgrId?: string;
+}
+
+export interface POFilters {
+  search?: string;
+  approvalStatus?: string;
+  vendorId?: string;
+  projectNo?: string;
+  minTotal?: string;
+  maxTotal?: string;
+  poDateFrom?: string;
+  poDateTo?: string;
+  validity?: string;
+  sortBy?: string;
+  sortOrder?: string;
+  expiringInMonths?: string;
+  riskExpiringLowCollection?: boolean;
+  riskExpiredUncollected?: boolean;
+  riskStalled?: boolean;
+}
+
+export interface InvoiceFilters {
+  search?: string;
+  invoiceType?: string;
+  hasObjection?: boolean;
+  unpaidOnly?: boolean;
+  prjMgrId?: string;
+  vendorId?: string;
+  projectNo?: string;
+  minAmount?: string;
+  maxAmount?: string;
+  invoiceDateFrom?: string;
+  invoiceDateTo?: string;
+  sortBy?: string;
+  sortOrder?: string;
+  riskOverdueUnpaid?: boolean;
+  riskDisputedUnpaid?: boolean;
+}
+
+export interface BillDeskFilters {
+  search?: string;
+  status?: string;
+  invoiceStatus?: string;
+  billMonth?: string;
+  hasObjectionRemarks?: boolean;
+  projectNo?: string;
+  minAmount?: string;
+  maxAmount?: string;
+  invoiceDateFrom?: string;
+  invoiceDateTo?: string;
+  receivedDateFrom?: string;
+  receivedDateTo?: string;
+  sortBy?: string;
+  sortOrder?: string;
+}
+
+export interface TaxInvoiceFilters {
+  search?: string;
+  billStatus?: string;
+  state?: string;
+  billType?: string;
+  missingIrn?: boolean;
+  projectNo?: string;
+  minAmount?: string;
+  maxAmount?: string;
+  billDateFrom?: string;
+  billDateTo?: string;
+  sortBy?: string;
+  sortOrder?: string;
+  riskMissingIrn?: boolean;
 }
 
 // API calls returning promises to simulate async REST operations
 export const api = {
   // PROJECTS
-  getProjects: async (filters?: ProjectFilters): Promise<Project[]> => {
+  getProjects: async (filters?: ProjectFilters): Promise<(Project & DatabaseProject)[]> => {
     const url = new URL(`${API_URL}/api/projects`);
     if (filters) {
       Object.entries(filters).forEach(([key, val]) => {
@@ -106,31 +249,40 @@ export const api = {
         }
       });
     }
-    const res = await fetch(url.toString());
+    const res = await fetchWithAuth(url.toString());
     if (!res.ok) {
       throw new Error('Failed to fetch projects from server');
     }
     const json = await res.json();
     const projectsArray = json.data.map(mapDbProjectToProject);
-    // Attach the total count as a custom property on the array for footer metrics
+    // Attach the total count and status group counts as custom properties on the array
     (projectsArray as any).totalCount = json.count;
+    (projectsArray as any).statusCounts = json.statusCounts;
     return projectsArray;
   },
   
-  getProjectById: async (id: string): Promise<Project | undefined> => {
-    const res = await fetch(`${API_URL}/api/projects`);
+  getProjectById: async (id: string): Promise<(Project & DatabaseProject) | undefined> => {
+    const res = await fetchWithAuth(`${API_URL}/api/projects`);
     if (!res.ok) {
       throw new Error('Failed to fetch projects from server');
     }
     const json = await res.json();
-    const projects: Project[] = json.data.map(mapDbProjectToProject);
-    return projects.find(p => p.id === id);
+    const projects = json.data.map(mapDbProjectToProject);
+    return projects.find((p: any) => p.id === id);
   },
 
   getProjectTypes: async (): Promise<string[]> => {
-    const res = await fetch(`${API_URL}/api/projects/types`);
+    const res = await fetchWithAuth(`${API_URL}/api/projects/types`);
     if (!res.ok) {
       throw new Error('Failed to fetch project types');
+    }
+    return res.json();
+  },
+
+  getProjectManagers: async (): Promise<{ prjMgrId: number; prjMgrName: string }[]> => {
+    const res = await fetchWithAuth(`${API_URL}/api/projects/managers`);
+    if (!res.ok) {
+      throw new Error('Failed to fetch project managers');
     }
     return res.json();
   },
@@ -149,70 +301,123 @@ export const api = {
   },
 
   // INVOICES
-  getInvoices: async (): Promise<Invoice[]> => {
-    return getStorageItem<Invoice>('npms_invoices');
+  getInvoices: async (filters?: InvoiceFilters): Promise<Invoice[]> => {
+    const url = new URL(`${API_URL}/api/invoices`);
+    if (filters) {
+      Object.entries(filters).forEach(([key, val]) => {
+        if (val !== undefined && val !== null && val !== '') {
+          url.searchParams.append(key, String(val));
+        }
+      });
+    }
+    const res = await fetchWithAuth(url.toString());
+    if (!res.ok) {
+      throw new Error('Failed to fetch invoices');
+    }
+    const json = await res.json();
+    return json.data;
   },
 
-  createInvoice: async (invoice: Omit<Invoice, 'id' | 'projectName' | 'customer'>): Promise<Invoice> => {
-    const invoices = getStorageItem<Invoice>('npms_invoices');
-    const projects = getStorageItem<Project>('npms_projects');
-    const project = projects.find(p => p.id === invoice.projectNo);
-    
-    const newInvoice: Invoice = {
-      ...invoice,
-      id: `INV-2026-${String(invoices.length + 1).padStart(3, '0')}`,
-      projectName: project ? project.name : 'Unknown Project',
-      customer: project ? project.client : 'Unknown Customer'
-    };
-
-    invoices.unshift(newInvoice);
-    setStorageItem('npms_invoices', invoices);
-
-    // Update project metrics accordingly
-    if (project) {
-      project.invoiceAmount += invoice.amount;
-      if (invoice.status === 'Paid') {
-        project.amountPaid += invoice.amount;
-      }
-      // Re-evaluate project status based on bills
-      const projInvs = invoices.filter(i => i.projectNo === project.id);
-      const paidAmt = projInvs.filter(i => i.status === 'Paid').reduce((sum, i) => sum + i.amount, 0);
-      const totalInv = projInvs.reduce((sum, i) => sum + i.amount, 0);
-      
-      if (totalInv === 0) {
-        project.status = 'No Invoices Yet';
-      } else if (paidAmt >= project.poAmount) {
-        project.status = 'Fully Paid';
-      } else {
-        project.status = 'Partially Paid';
-      }
-      setStorageItem('npms_projects', projects);
+  getInvoiceDistinctValues: async (): Promise<any> => {
+    const res = await fetchWithAuth(`${API_URL}/api/invoices?distinctValues=true`);
+    if (!res.ok) {
+      throw new Error('Failed to fetch distinct values for invoices');
     }
+    return res.json();
+  },
 
-    // Add activity log
-    const activities = getStorageItem<Activity>('npms_activities');
-    activities.unshift({
-      id: `ACT-${Date.now()}`,
-      projectNo: invoice.projectNo,
-      title: `Invoice ${newInvoice.id} Created`,
-      actor: 'Finance Admin',
-      timestamp: 'Just now',
-      type: 'info',
-      description: `New invoice of ₹${invoice.amount.toLocaleString('en-IN')} drafted for ${newInvoice.projectName}.`
-    });
-    setStorageItem('npms_activities', activities);
+  createInvoice: async (_invoice: any): Promise<any> => {
+    return {} as any;
+  },
 
-    return newInvoice;
+  checkInvoicesExist: async (projectNo: string): Promise<boolean> => {
+    const res = await fetchWithAuth(`${API_URL}/api/invoices/exists?projectNo=${encodeURIComponent(projectNo)}`);
+    if (!res.ok) {
+      throw new Error('Failed to check invoices existence');
+    }
+    const json = await res.json();
+    return json.exists;
   },
 
   // PURCHASE ORDERS
-  getPurchaseOrders: async (): Promise<PurchaseOrder[]> => {
-    return getStorageItem<PurchaseOrder>('npms_purchase_orders');
+  getPurchaseOrders: async (filters?: POFilters): Promise<PurchaseOrder[]> => {
+    const url = new URL(`${API_URL}/api/purchase-orders`);
+    if (filters) {
+      Object.entries(filters).forEach(([key, val]) => {
+        if (val !== undefined && val !== null && val !== '') {
+          url.searchParams.append(key, String(val));
+        }
+      });
+    }
+    const res = await fetchWithAuth(url.toString());
+    if (!res.ok) {
+      throw new Error('Failed to fetch purchase orders');
+    }
+    const json = await res.json();
+    const data = json.data;
+    (data as any).activeCount = json.activeCount || 0;
+    (data as any).expiredCount = json.expiredCount || 0;
+    return data;
+  },
+
+  getPurchaseOrderDistinctValues: async (): Promise<any> => {
+    const res = await fetchWithAuth(`${API_URL}/api/purchase-orders?distinctValues=true`);
+    if (!res.ok) {
+      throw new Error('Failed to fetch distinct values for purchase orders');
+    }
+    return res.json();
+  },
+
+  // BILL DESK
+  getBillDesk: async (filters?: BillDeskFilters): Promise<BillDeskRecord[]> => {
+    const url = new URL(`${API_URL}/api/bill-desk`);
+    if (filters) {
+      Object.entries(filters).forEach(([key, val]) => {
+        if (val !== undefined && val !== null && val !== '') {
+          url.searchParams.append(key, String(val));
+        }
+      });
+    }
+    const res = await fetchWithAuth(url.toString());
+    if (!res.ok) {
+      throw new Error('Failed to fetch bill desk records');
+    }
+    const json = await res.json();
+    return json.data;
+  },
+
+  getBillDeskDistinctValues: async (): Promise<any> => {
+    const res = await fetchWithAuth(`${API_URL}/api/bill-desk?distinctValues=true`);
+    if (!res.ok) {
+      throw new Error('Failed to fetch distinct values for bill desk');
+    }
+    return res.json();
   },
 
   // TAX INVOICES
-  getTaxInvoices: async (): Promise<TaxInvoice[]> => {
-    return getStorageItem<TaxInvoice>('npms_tax_invoices');
+  getTaxInvoices: async (filters?: TaxInvoiceFilters): Promise<TaxInvoice[]> => {
+    const url = new URL(`${API_URL}/api/tax-invoices`);
+    if (filters) {
+      Object.entries(filters).forEach(([key, val]) => {
+        if (val !== undefined && val !== null && val !== '') {
+          url.searchParams.append(key, String(val));
+        }
+      });
+    }
+    const res = await fetchWithAuth(url.toString());
+    if (!res.ok) {
+      throw new Error('Failed to fetch tax invoices');
+    }
+    const json = await res.json();
+    return json.data;
+  },
+
+  getTaxInvoiceDistinctValues: async (): Promise<any> => {
+    const res = await fetchWithAuth(`${API_URL}/api/tax-invoices?distinctValues=true`);
+    if (!res.ok) {
+      throw new Error('Failed to fetch distinct values for tax invoices');
+    }
+    return res.json();
   },
 
   // ACTIVITIES
@@ -246,22 +451,47 @@ export const api = {
   },
 
   // DASHBOARD METRICS
-  getDashboardMetrics: async () => {
-    const projects = getStorageItem<Project>('npms_projects');
-    const invoices = getStorageItem<Invoice>('npms_invoices');
+  getDashboardMetrics: async (): Promise<any> => {
+    const res = await fetchWithAuth(`${API_URL}/api/dashboard/summary`);
+    if (!res.ok) {
+      throw new Error('Failed to fetch dashboard metrics');
+    }
+    return res.json();
+  },
 
-    const totalPO = projects.reduce((sum, p) => sum + p.poAmount, 0);
-    const totalInvoiced = invoices.reduce((sum, i) => sum + (i.status !== 'Draft' ? i.amount : 0), 0);
-    const totalPaid = invoices.reduce((sum, i) => sum + (i.status === 'Paid' ? i.amount : 0), 0);
-    const totalOutstanding = invoices.reduce((sum, i) => sum + (i.status === 'Overdue' || i.status === 'Pending' ? i.amount : 0), 0);
-    const totalReceived = totalPaid; // received and paid are equivalent in this context
+  getDashboardCharts: async (): Promise<any[]> => {
+    const res = await fetchWithAuth(`${API_URL}/api/dashboard/charts`);
+    if (!res.ok) {
+      throw new Error('Failed to fetch dashboard charts');
+    }
+    return res.json();
+  },
 
-    return {
-      totalReceived,
-      totalPO,
-      totalInvoiced,
-      totalPaid,
-      totalOutstanding
-    };
+  // MANAGERS (SUPERADMIN ONLY)
+  getManagers: async (): Promise<any[]> => {
+    const res = await fetchWithAuth(`${API_URL}/api/managers`);
+    if (!res.ok) {
+      throw new Error('Failed to fetch managers');
+    }
+    return res.json();
+  },
+
+  createManager: async (managerData: {
+    fullName: string;
+    username: string;
+    password: string;
+    email: string;
+    mobileNumber: string;
+  }): Promise<any> => {
+    const res = await fetchWithAuth(`${API_URL}/api/managers`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(managerData)
+    });
+    if (!res.ok) {
+      const err = await res.json();
+      throw new Error(err.error || 'Failed to create manager');
+    }
+    return res.json();
   }
 };

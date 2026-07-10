@@ -78,6 +78,13 @@ export const ProjectDetail: React.FC = () => {
     return `₹${val.toLocaleString('en-IN')}`;
   };
 
+  const formatDate = (dateStr: string | null | undefined) => {
+    if (!dateStr) return '—';
+    const d = new Date(dateStr);
+    if (isNaN(d.getTime())) return dateStr;
+    return d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+  };
+
   if (loading) {
     return <div className="text-secondary font-headline p-8">Loading project details...</div>;
   }
@@ -108,21 +115,20 @@ export const ProjectDetail: React.FC = () => {
 
   // Filter lists based on search query in layout context
   const filteredInvoices = invoices.filter(i => 
-    i.id.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    i.status.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    i.dueDate.includes(searchQuery)
+    String(i.invoiceNum || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
+    String(i.invoiceType || '').toLowerCase().includes(searchQuery.toLowerCase())
   );
 
   const filteredPOs = purchaseOrders.filter(po => 
-    po.id.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    po.vendor.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    po.status.toLowerCase().includes(searchQuery.toLowerCase())
+    String(po.finalPoNo || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
+    String(po.vendorName || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
+    String(po.approvalStatus || '').toLowerCase().includes(searchQuery.toLowerCase())
   );
 
   const filteredTxs = taxInvoices.filter(tx => 
-    tx.id.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    tx.linkedInvoiceNo.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    tx.status.toLowerCase().includes(searchQuery.toLowerCase())
+    String(tx.userBillNo || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
+    String(tx.poNo || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
+    String(tx.billStatus || '').toLowerCase().includes(searchQuery.toLowerCase())
   );
 
   // Paginated elements helper
@@ -314,42 +320,41 @@ export const ProjectDetail: React.FC = () => {
                           <td colSpan={6} className="px-6 py-8 text-center text-secondary font-headline">No invoices found for this project.</td>
                         </tr>
                       ) : (
-                        paginate(filteredInvoices).map((inv) => (
-                          <tr key={inv.id} className="hover:bg-surface transition-colors cursor-pointer group">
-                            <td className="px-6 py-4">
-                              <div className="flex items-center gap-3">
-                                <div className="w-8 h-8 rounded bg-primary/5 flex items-center justify-center text-primary">
-                                  <FileText className="w-4 h-4" />
+                        paginate(filteredInvoices).map((inv) => {
+                          const status = inv.unpaid && inv.unpaid > 0 ? 'Pending' : 'Paid';
+                          return (
+                            <tr key={inv.id} onClick={() => navigate(`/invoices?projectNo=${id}`)} className="hover:bg-surface transition-colors cursor-pointer group">
+                              <td className="px-6 py-4">
+                                <div className="flex items-center gap-3">
+                                  <div className="w-8 h-8 rounded bg-primary/5 flex items-center justify-center text-primary">
+                                    <FileText className="w-4 h-4" />
+                                  </div>
+                                  <span className="font-headline text-sm font-semibold text-on-surface">{inv.invoiceNum || inv.id}</span>
                                 </div>
-                                <span className="font-headline text-sm font-semibold text-on-surface">{inv.id}</span>
-                              </div>
-                            </td>
-                            <td className="px-6 py-4 text-secondary text-sm">{inv.date}</td>
-                            <td className="px-6 py-4 text-secondary text-sm font-medium">{formatINR(inv.tax, false)}</td>
-                            <td className="px-6 py-4 font-headline text-base font-bold text-on-surface">{formatINR(inv.amount, false)}</td>
-                            <td className="px-6 py-4">
-                              <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider border ${
-                                inv.status === 'Paid' 
-                                  ? 'bg-green-100 text-green-700 border-green-200' 
-                                  : inv.status === 'Pending' 
-                                  ? 'bg-amber-100 text-amber-700 border-amber-200' 
-                                  : inv.status === 'Overdue' 
-                                  ? 'bg-red-100 text-red-700 border-red-200'
-                                  : 'bg-surface-container-high text-secondary border-outline-variant'
-                              }`}>
-                                <span className={`w-1.5 h-1.5 rounded-full ${
-                                  inv.status === 'Paid' ? 'bg-green-700' : inv.status === 'Pending' ? 'bg-amber-700' : inv.status === 'Overdue' ? 'bg-red-700' : 'bg-outline'
-                                }`} />
-                                {inv.status}
-                              </span>
-                            </td>
-                            <td className="px-6 py-4 text-right" onClick={e => e.stopPropagation()}>
-                              <button className="p-2 text-secondary hover:text-primary rounded-lg transition-colors">
-                                <MoreVertical className="w-5 h-5" />
-                              </button>
-                            </td>
-                          </tr>
-                        ))
+                              </td>
+                              <td className="px-6 py-4 text-secondary text-sm">{formatDate(inv.invoiceDate)}</td>
+                              <td className="px-6 py-4 text-secondary text-sm font-medium">{formatINR(inv.penAmt || 0, false)}</td>
+                              <td className="px-6 py-4 font-headline text-base font-bold text-on-surface">{formatINR(inv.invoiceAmount, false)}</td>
+                              <td className="px-6 py-4">
+                                <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider border ${
+                                  status === 'Paid' 
+                                    ? 'bg-green-100 text-green-700 border-green-200' 
+                                    : 'bg-amber-100 text-amber-700 border-amber-200'
+                                }`}>
+                                  <span className={`w-1.5 h-1.5 rounded-full ${
+                                    status === 'Paid' ? 'bg-green-700' : 'bg-amber-700'
+                                  }`} />
+                                  {status}
+                                </span>
+                              </td>
+                              <td className="px-6 py-4 text-right" onClick={e => e.stopPropagation()}>
+                                <button className="p-2 text-secondary hover:text-primary rounded-lg transition-colors">
+                                  <MoreVertical className="w-5 h-5" />
+                                </button>
+                              </td>
+                            </tr>
+                          );
+                        })
                       )}
                     </tbody>
                   </table>
@@ -395,15 +400,15 @@ export const ProjectDetail: React.FC = () => {
                         </tr>
                       ) : (
                         paginate(filteredPOs).map((po) => (
-                          <tr key={po.id} className="hover:bg-surface transition-colors cursor-pointer">
-                            <td className="px-6 py-4 font-headline text-sm font-semibold text-primary">{po.id}</td>
-                            <td className="px-6 py-4 text-secondary text-sm">{po.date}</td>
-                            <td className="px-6 py-4 font-sans text-sm font-medium">{po.vendor}</td>
-                            <td className="px-6 py-4 text-right font-headline text-base font-bold text-on-surface">{formatINR(po.amount, false)}</td>
+                          <tr key={po.id} onClick={() => navigate(`/purchase-orders?projectNo=${id}`)} className="hover:bg-surface transition-colors cursor-pointer">
+                            <td className="px-6 py-4 font-headline text-sm font-semibold text-primary">{po.finalPoNo || po.id}</td>
+                            <td className="px-6 py-4 text-secondary text-sm">{formatDate(po.poDate)}</td>
+                            <td className="px-6 py-4 font-sans text-sm font-medium">{po.vendorName}</td>
+                            <td className="px-6 py-4 text-right font-headline text-base font-bold text-on-surface">{formatINR(po.total, false)}</td>
                             <td className="px-6 py-4">
-                              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-green-50 text-green-700 font-bold text-[10px] border border-green-200 uppercase">
-                                <span className="w-1.5 h-1.5 rounded-full bg-green-600" />
-                                {po.status}
+                              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-status-success-bg text-status-success-text font-bold text-[10px] border border-status-success-border uppercase">
+                                <span className="w-1.5 h-1.5 rounded-full bg-status-success-text" />
+                                {po.approvalStatus}
                               </span>
                             </td>
                           </tr>
@@ -437,17 +442,17 @@ export const ProjectDetail: React.FC = () => {
                         </tr>
                       ) : (
                         paginate(filteredTxs).map((tx) => (
-                          <tr key={tx.id} className="hover:bg-surface transition-colors cursor-pointer">
-                            <td className="px-6 py-4 font-headline text-sm font-semibold text-primary">{tx.id}</td>
-                            <td className="px-6 py-4 text-secondary text-sm">{tx.date}</td>
-                            <td className="px-6 py-4 font-sans text-sm text-secondary">{tx.linkedInvoiceNo}</td>
-                            <td className="px-6 py-4 text-right font-headline text-base font-bold text-on-surface">{formatINR(tx.amount, false)}</td>
+                          <tr key={tx.id} onClick={() => navigate(`/tax-invoices?projectNo=${id}`)} className="hover:bg-surface transition-colors cursor-pointer">
+                            <td className="px-6 py-4 font-headline text-sm font-semibold text-primary">{tx.userBillNo || tx.id}</td>
+                            <td className="px-6 py-4 text-secondary text-sm">{formatDate(tx.billDate)}</td>
+                            <td className="px-6 py-4 font-sans text-sm text-secondary">{tx.poNo}</td>
+                            <td className="px-6 py-4 text-right font-headline text-base font-bold text-on-surface">{formatINR(tx.totalAmount, false)}</td>
                             <td className="px-6 py-4">
                               <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider border ${
-                                tx.status === 'Issued' ? 'bg-green-50 text-green-700 border-green-200' : 'bg-amber-50 text-amber-700 border-amber-200'
+                                tx.billStatus === 'FINAL' ? 'bg-status-success-bg text-status-success-text border-status-success-border' : 'bg-status-warning-bg text-status-warning-text border-status-warning-border'
                               }`}>
-                                <span className={`w-1.5 h-1.5 rounded-full ${tx.status === 'Issued' ? 'bg-green-600' : 'bg-amber-600'}`} />
-                                {tx.status}
+                                <span className={`w-1.5 h-1.5 rounded-full ${tx.billStatus === 'FINAL' ? 'bg-status-success-text' : 'bg-status-warning-text'}`} />
+                                {tx.billStatus}
                               </span>
                             </td>
                           </tr>
@@ -482,8 +487,18 @@ export const ProjectDetail: React.FC = () => {
               {/* BILL DESK TAB */}
               {activeTab === 'Bill Desk' && (
                 <div className="p-6 space-y-4 font-sans">
-                  <h4 className="font-headline text-lg font-bold text-on-surface">Project Billing Desk</h4>
-                  <p className="text-secondary text-sm">Direct portal to settle pending claims and audit draft payouts.</p>
+                  <div className="flex justify-between items-center">
+                    <div>
+                      <h4 className="font-headline text-lg font-bold text-on-surface">Project Billing Desk</h4>
+                      <p className="text-secondary text-sm">Direct portal to settle pending claims and audit draft payouts.</p>
+                    </div>
+                    <button 
+                      onClick={() => navigate(`/bill-desk?projectNo=${id}`)}
+                      className="px-4 py-2 bg-primary hover:bg-primary-container text-white font-headline text-xs font-bold rounded-lg shadow-sm transition-colors"
+                    >
+                      View in Bill Desk
+                    </button>
+                  </div>
                   
                   <div className="bg-primary/5 border border-primary/20 rounded-lg p-4 flex gap-4 items-start">
                     <Info className="w-5 h-5 text-primary shrink-0 mt-0.5" />
