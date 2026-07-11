@@ -6,7 +6,7 @@ import { toast } from '../lib/toast';
 
 export const Login: React.FC = () => {
   const navigate = useNavigate();
-  const { login, verifyMfa } = useAuth();
+  const { login, verifyMfa, setSession } = useAuth();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
@@ -72,9 +72,17 @@ export const Login: React.FC = () => {
         throw new Error(errData.error || 'Failed to verify OTP');
       }
       const data = await res.json();
-      setResetToken(data.resetToken);
-      toast.success('OTP verified successfully.');
-      setForgotStep('reset');
+      if (data.resetToken) {
+        setResetToken(data.resetToken);
+        toast.success('OTP verified successfully.');
+        setForgotStep('reset');
+      } else if (data.accessToken && data.user) {
+        setSession(data.accessToken, data.user);
+        toast.success('Signed in via one-time code');
+        navigate('/dashboard');
+      } else {
+        throw new Error('Invalid server response');
+      }
     } catch (err: any) {
       toast.error(err.message || 'Verification failed');
     } finally {

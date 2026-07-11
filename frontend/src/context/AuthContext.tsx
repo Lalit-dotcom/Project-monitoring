@@ -15,6 +15,7 @@ interface AuthContextType {
   login: (username: string, password: string) => Promise<any>;
   verifyMfa: (mfaToken: string, code: string) => Promise<void>;
   logout: () => Promise<void>;
+  setSession: (accessToken: string, user: User) => void;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -148,8 +149,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
+  const setSession = (token: string, userData: User) => {
+    updateAccess(token);
+    setUser(userData);
+  };
+
   return (
-    <AuthContext.Provider value={{ accessToken, user, loading, login, verifyMfa, logout }}>
+    <AuthContext.Provider value={{ accessToken, user, loading, login, verifyMfa, logout, setSession }}>
       {children}
     </AuthContext.Provider>
   );

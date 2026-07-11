@@ -1,6 +1,10 @@
+import dotenv from 'dotenv';
+dotenv.config();
+
+console.log(`[STARTUP] dotenv loaded. SMTP_HOST defined: ${!!process.env.SMTP_HOST} (len: ${process.env.SMTP_HOST?.length || 0}), SMTP_USER defined: ${!!process.env.SMTP_USER} (len: ${process.env.SMTP_USER?.length || 0})`);
+
 import express from 'express';
 import cors from 'cors';
-import dotenv from 'dotenv';
 import cookieParser from 'cookie-parser';
 import projectsRouter from './routes/projects.js';
 import authRouter from './routes/auth.js';
@@ -13,9 +17,6 @@ import taxInvoicesRouter from './routes/taxInvoices.js';
 import pmSummaryRouter from './routes/pmSummary.js';
 import dashboardRouter from './routes/dashboard.js';
 import managersRouter from './routes/managers.js';
-
-// Load environmental variables
-dotenv.config();
 
 const app = express();
 const port = process.env.PORT || 4000;

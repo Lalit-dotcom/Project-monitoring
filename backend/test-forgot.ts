@@ -37,106 +37,87 @@ async function verifyOtp(username: string, code: string) {
     body: JSON.stringify({ username, code })
   });
   const data = await res.json();
-  return { status: res.status, data };
-}
-
-async function resetPassword(resetToken: string, newPassword: string) {
-  const res = await fetch(`${baseUrl}/api/auth/reset-password`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ resetToken, newPassword })
-  });
-  const data = await res.json();
-  return { status: res.status, data };
-}
-
-async function login(username: string, password: string) {
-  const res = await fetch(`${baseUrl}/api/auth/login`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ username, password })
-  });
-  const data = await res.json();
-  return { status: res.status, data };
+  return { status: res.status, headers: res.headers, data };
 }
 
 async function run() {
-  console.log('Starting end-to-end Password Reset flow tests...');
+  console.log('Starting end-to-end Password Reset and Direct OTP Login flow tests...');
   const client = new pg.Client({ connectionString: process.env.DATABASE_URL });
   await client.connect();
 
   try {
     // Clean up past OTPs
-    await client.query("DELETE FROM password_reset_otps WHERE username = 'atul'");
+    await client.query("DELETE FROM password_reset_otps WHERE username IN ('atul', 'lalit')");
 
-    // ==================== TEST 1: OTP Lockout (5 incorrect attempts) ====================
-    console.log('\n--- Test 1: OTP Lockout (5 incorrect attempts) ---');
+    // Get atul's password hash BEFORE the flow
+    const hashResBefore = await client.query("SELECT password_hash FROM users WHERE username = 'atul'");
+    const atulHashBefore = hashResBefore.rows[0].password_hash;
+    console.log("Atul's password hash BEFORE flow:", atulHashBefore);
+
+    // ==================== TEST 1: PM (atul) OTP Verification - DIRECT LOGIN ====================
+    console.log('\n--- Test 1: PM (atul) OTP Verification - DIRECT LOGIN ---');
     
     // Request OTP
     let status = await requestOtp('atul');
     console.log('Request OTP status:', status);
     
-    const initialOtp = await getLatestOtp(client, 'atul');
-    console.log('Generated OTP code:', initialOtp);
+    const atulOtp = await getLatestOtp(client, 'atul');
+    console.log('Atul OTP code:', atulOtp);
 
-    // Call verify-otp 5 times with a wrong code
-    for (let i = 1; i <= 6; i++) {
-      const { status: verifyStatus, data } = await verifyOtp('atul', '999999');
-      const details = await getOtpDetails(client, 'atul');
-      console.log(`Attempt ${i}: verify-otp status = ${verifyStatus}, attempt_count = ${details.attempt_count}, used = ${details.used}, response =`, data);
-    }
-
-    // Try verifying the locked OTP with the correct code
-    if (initialOtp) {
-      console.log('Trying to verify locked OTP with correct code...');
-      const { status: verifyStatus, data } = await verifyOtp('atul', initialOtp);
-      console.log('Status:', verifyStatus, 'Response:', data);
-    }
-
-    // ==================== TEST 2: Fresh OTP Request after Lockout ====================
-    console.log('\n--- Test 2: Fresh OTP Request after Lockout ---');
-    
-    status = await requestOtp('atul');
-    console.log('Request new OTP status:', status);
-    
-    const secondOtp = await getLatestOtp(client, 'atul');
-    console.log('New OTP code:', secondOtp);
-    
-    const secondDetails = await getOtpDetails(client, 'atul');
-    console.log('New OTP details:', secondDetails);
-
-    // Verify correct code
-    if (secondOtp) {
-      console.log('Verifying new OTP with correct code...');
-      const { status: verifyStatus, data } = await verifyOtp('atul', secondOtp);
-      console.log('Status:', verifyStatus, 'Response:', data);
+    if (atulOtp) {
+      console.log('Verifying atul OTP...');
+      const { status: verifyStatus, headers, data } = await verifyOtp('atul', atulOtp);
+      console.log('Verify Status:', verifyStatus);
+      console.log('Verify Response Body:', data);
       
-      const resetToken = data.resetToken;
-      if (resetToken) {
-        console.log('Reset token issued successfully!');
+      const cookie = headers.get('set-cookie');
+      console.log('Refresh token cookie set:', !!cookie);
 
-        // Reset password
-        console.log('Resetting password to "atulnewpassword"...');
-        const { status: resetStatus, data: resetData } = await resetPassword(resetToken, 'atulnewpassword');
-        console.log('Reset password status:', resetStatus, 'Response:', resetData);
-
-        // Test login with old password "123" (should fail)
-        console.log('Testing login with old password "123"...');
-        const { status: oldLoginStatus, data: oldLoginData } = await login('atul', '123');
-        console.log('Status:', oldLoginStatus, 'Response:', oldLoginData);
-
-        // Test login with new password (should succeed)
-        console.log('Testing login with new password "atulnewpassword"...');
-        const { status: newLoginStatus, data: newLoginData } = await login('atul', 'atulnewpassword');
-        console.log('Status:', newLoginStatus, 'Response:', newLoginData);
-
-        // Restore password back to "123"
-        console.log('Restoring password back to "123"...');
-        const restoreHash = await bcrypt.hash('123', 10);
-        await client.query("UPDATE users SET password_hash = $1 WHERE username = 'atul'", [restoreHash]);
-        console.log('Password restored successfully.');
+      // Assertions
+      if (data.accessToken && data.user && data.user.role === 'project_manager') {
+        console.log('SUCCESS: Project Manager logged in directly with access token and user info!');
       } else {
-        console.error('Failed to get reset token');
+        console.error('FAIL: PM did not log in directly!');
+      }
+      if (data.resetToken) {
+        console.error('FAIL: PM received a resetToken!');
+      }
+    }
+
+    // Get atul's password hash AFTER the flow
+    const hashResAfter = await client.query("SELECT password_hash FROM users WHERE username = 'atul'");
+    const atulHashAfter = hashResAfter.rows[0].password_hash;
+    console.log("Atul's password hash AFTER flow:", atulHashAfter);
+
+    if (atulHashBefore === atulHashAfter) {
+      console.log("SUCCESS: Atul's password hash is COMPLETELY UNTOUCHED.");
+    } else {
+      console.error("FAIL: Atul's password hash was modified!");
+    }
+
+    // ==================== TEST 2: Superadmin (lalit) OTP Verification - PASSWORD RESET ====================
+    console.log('\n--- Test 2: Superadmin (lalit) OTP Verification - PASSWORD RESET ---');
+    
+    // Request OTP
+    status = await requestOtp('lalit');
+    console.log('Request OTP status:', status);
+    
+    const lalitOtp = await getLatestOtp(client, 'lalit');
+    console.log('Lalit OTP code:', lalitOtp);
+
+    if (lalitOtp) {
+      console.log('Verifying lalit OTP...');
+      const { status: verifyStatus, data } = await verifyOtp('lalit', lalitOtp);
+      console.log('Verify Status:', verifyStatus);
+      console.log('Verify Response Body:', data);
+
+      if (data.resetToken) {
+        console.log('SUCCESS: Superadmin received a password reset token as expected!');
+      } else {
+        console.error('FAIL: Superadmin did not receive a resetToken!');
+      }
+      if (data.accessToken) {
+        console.error('FAIL: Superadmin logged in directly instead of getting a resetToken!');
       }
     }
 

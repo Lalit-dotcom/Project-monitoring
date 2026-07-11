@@ -2,6 +2,7 @@ import { Router, Request, Response } from 'express';
 import jwt from 'jsonwebtoken';
 import bcrypt from 'bcrypt';
 import crypto from 'crypto';
+import nodemailer from 'nodemailer';
 import { generateSecret, generateURI, verify } from 'otplib';
 import QRCode from 'qrcode';
 import { pool } from '../db.js';
@@ -221,8 +222,36 @@ router.post('/forgot-password', async (req: Request, res: Response): Promise<voi
       [username, otp, expiresAt]
     );
 
-    // Simulate sending email
-    console.log(`[SIMULATED EMAIL] Sending Password Reset OTP to ${email}: ${otp}`);
+    // SMTP Sending Logic
+    if (process.env.SMTP_HOST) {
+      try {
+        const transporter = nodemailer.createTransport({
+          host: process.env.SMTP_HOST,
+          port: parseInt(process.env.SMTP_PORT || '587'),
+          secure: false, // Port 587 uses STARTTLS, secure must be false
+          auth: {
+            user: process.env.SMTP_USER,
+            pass: process.env.SMTP_PASSWORD
+          }
+        });
+
+        const mailOptions = {
+          from: process.env.SMTP_FROM || `"NPMS" <${process.env.SMTP_USER}>`,
+          to: email,
+          subject: 'NPMS Password Reset OTP',
+          text: `Your password reset one-time passcode (OTP) is: ${otp}. It will expire in 5 minutes.`,
+          html: `<p>Your password reset one-time passcode (OTP) is: <strong>${otp}</strong>.</p><p>It will expire in 5 minutes.</p>`
+        };
+
+        console.log(`[SMTP] Attempting real SMTP send to ${email} via ${process.env.SMTP_HOST}...`);
+        await transporter.sendMail(mailOptions);
+        console.log(`[SMTP] Real SMTP email sent successfully to ${email}`);
+      } catch (smtpErr: any) {
+        console.error(`SMTP send failed: ${smtpErr.message}`, smtpErr);
+      }
+    } else {
+      console.log(`[DEV MODE] [SIMULATED EMAIL] Sending Password Reset OTP to ${email}: ${otp}`);
+    }
 
     res.json({ message: 'If an account exists with that username and has an email associated, a reset OTP has been sent.' });
   } catch (err: any) {
@@ -288,18 +317,82 @@ router.post('/verify-otp', async (req: Request, res: Response): Promise<void> =>
 
     // Verify code
     if (otpRow.code === code) {
-      // Code is correct, mark as used and issue reset token
+      // Code is correct, mark as used and check user role
       await pool.query('UPDATE password_reset_otps SET used = true WHERE id = $1', [otpRow.id]);
       
-      const resetSecret = process.env.JWT_SECRET || 'super_secret_placeholder_change_me';
-      const resetToken = jwt.sign(
-        { username, purpose: 'password_reset' },
-        resetSecret,
-        { expiresIn: '5m' } // Short-lived reset token
+      const userResult = await pool.query(
+        `SELECT u.id, u.username, u.role, u.prj_mgr_id, pm.prj_mgr_name
+         FROM users u
+         LEFT JOIN project_managers pm ON u.prj_mgr_id = pm.prj_mgr_id
+         WHERE u.username = $1`,
+        [username]
       );
 
-      logAuthEvent(username, ip, 'OTP_VERIFY_SUCCESS');
-      res.json({ resetToken });
+      if (userResult.rows.length === 0) {
+        res.status(404).json({ error: 'User not found' });
+        return;
+      }
+
+      const userRow = userResult.rows[0];
+
+      if (userRow.role === 'superadmin') {
+        const resetSecret = process.env.JWT_SECRET || 'super_secret_placeholder_change_me';
+        const resetToken = jwt.sign(
+          { username, purpose: 'password_reset' },
+          resetSecret,
+          { expiresIn: '5m' } // Short-lived reset token
+        );
+
+        logAuthEvent(username, ip, 'OTP_VERIFY_SUCCESS: password_reset_initiated');
+        res.json({ resetToken });
+      } else {
+        // Project Manager - log in directly
+        const secret = process.env.JWT_SECRET || 'super_secret_placeholder_change_me';
+        const accessExpiry = process.env.JWT_ACCESS_EXPIRY || '15m';
+
+        const accessToken = jwt.sign(
+          {
+            userId: userRow.id,
+            username: userRow.username,
+            role: userRow.role,
+            prjMgrId: userRow.prj_mgr_id
+          },
+          secret,
+          { expiresIn: accessExpiry as any }
+        );
+
+        const rawRefreshToken = generateRefreshToken();
+        const hashedRefreshToken = hashToken(rawRefreshToken);
+        const deviceLabel = parseUserAgent(req.headers['user-agent']);
+
+        // Save session in DB
+        await pool.query(
+          `INSERT INTO sessions (user_id, refresh_token_hash, device_label, ip_address)
+           VALUES ($1, $2, $3, $4)`,
+          [userRow.id, hashedRefreshToken, deviceLabel, ip]
+        );
+
+        // Set httpOnly cookie
+        res.cookie('npms_refresh', rawRefreshToken, {
+          httpOnly: true,
+          secure: process.env.NODE_ENV === 'production',
+          sameSite: 'strict',
+          path: '/api/auth',
+          maxAge: 7 * 24 * 60 * 60 * 1000 // 7 days
+        });
+
+        logAuthEvent(username, ip, 'OTP_VERIFY_SUCCESS: otp_based_login');
+
+        res.json({
+          accessToken,
+          user: {
+            username: userRow.username,
+            role: userRow.role,
+            prjMgrId: userRow.prj_mgr_id,
+            prjMgrName: userRow.prj_mgr_name || null
+          }
+        });
+      }
     } else {
       // Code is incorrect
       logAuthEvent(username, ip, `OTP_VERIFY_FAILED: incorrect_code_attempt_${newAttemptCount}`);
