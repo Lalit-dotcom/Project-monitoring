@@ -140,6 +140,12 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 <p className="text-[10px] text-[#9CA3AF] font-bold tracking-wider uppercase mb-3">
                   {user ? (user.role === 'superadmin' ? 'SUPER ADMIN' : 'PROJECT MANAGER') : 'SUPER ADMIN'}
                 </p>
+                <NavLink
+                  to="/settings"
+                  className="w-full flex items-center justify-center gap-1.5 px-3 py-2 mb-2 bg-[#0B0F19] hover:bg-white/10 text-white font-headline text-[10px] font-bold uppercase tracking-wider rounded-md transition-colors pointer-events-auto shadow-sm"
+                >
+                  Settings
+                </NavLink>
                 <button
                   onClick={() => setShowLogoutConfirm(true)}
                   className="w-full flex items-center justify-center gap-1.5 px-3 py-2 bg-error hover:bg-red-700 text-white font-headline text-[10px] font-bold uppercase tracking-wider rounded-md transition-colors pointer-events-auto shadow-sm"
@@ -153,12 +159,14 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
             {!collapsed && (
               <div className="flex-1 min-w-0 pr-2">
-                <p className="font-headline text-sm font-bold text-white truncate max-w-[120px]">
-                  {user ? (user.prjMgrName || user.username) : 'Administrator'}
-                </p>
-                <p className="text-[10px] text-[#9CA3AF] font-bold tracking-wider uppercase">
-                  {user ? (user.role === 'superadmin' ? 'Super Admin' : 'Project Manager') : 'Super Admin'}
-                </p>
+                <NavLink to="/settings" className="hover:underline text-left block">
+                  <p className="font-headline text-sm font-bold text-white truncate max-w-[120px]">
+                    {user ? (user.prjMgrName || user.username) : 'Administrator'}
+                  </p>
+                  <p className="text-[10px] text-[#9CA3AF] font-bold tracking-wider uppercase">
+                    {user ? (user.role === 'superadmin' ? 'Super Admin' : 'Project Manager') : 'Super Admin'}
+                  </p>
+                </NavLink>
               </div>
             )}
 

@@ -40,6 +40,35 @@ async function migrate() {
       );
     `);
 
+    console.log('Creating sessions table if it does not exist...');
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS sessions (
+        id SERIAL PRIMARY KEY,
+        user_id INTEGER NOT NULL REFERENCES users(id),
+        refresh_token_hash TEXT NOT NULL,
+        device_label TEXT,
+        ip_address TEXT,
+        created_at TIMESTAMP DEFAULT now(),
+        last_active_at TIMESTAMP DEFAULT now(),
+        revoked BOOLEAN DEFAULT FALSE
+      );
+    `);
+
+    console.log('Adding 2FA columns to users table if they do not exist...');
+    await client.query(`
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS totp_secret TEXT;
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS totp_enabled BOOLEAN DEFAULT FALSE;
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS totp_backup_codes TEXT[];
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS totp_temp_secret TEXT;
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS email TEXT;
+    `);
+
+    console.log('Adding new columns to sessions table if they do not exist...');
+    await client.query(`
+      ALTER TABLE sessions ADD COLUMN IF NOT EXISTS previous_token_hash TEXT;
+      ALTER TABLE sessions ADD COLUMN IF NOT EXISTS rotated_at TIMESTAMP;
+    `);
+
     console.log('Migrations executed successfully.');
   } catch (err: any) {
     console.error('Migration failed:', err.message);

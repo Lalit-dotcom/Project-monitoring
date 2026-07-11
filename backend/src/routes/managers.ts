@@ -49,8 +49,8 @@ router.post('/', async (req: AuthenticatedRequest, res: Response): Promise<void>
 
     const { fullName, username, password, email, mobileNumber } = req.body;
 
-    if (!fullName || !username || !password) {
-      res.status(400).json({ error: 'Full Name, Username, and Password are required.' });
+    if (!fullName || !username || !password || !email) {
+      res.status(400).json({ error: 'Full Name, Username, Password, and Email are required.' });
       return;
     }
 
@@ -96,14 +96,15 @@ router.post('/', async (req: AuthenticatedRequest, res: Response): Promise<void>
 
     // Insert into users
     const userInsertQuery = `
-      INSERT INTO users (username, password_hash, role, prj_mgr_id)
-      VALUES ($1, $2, 'project_manager', $3)
+      INSERT INTO users (username, password_hash, role, prj_mgr_id, email)
+      VALUES ($1, $2, 'project_manager', $3, $4)
       RETURNING id, username, role, prj_mgr_id
     `;
     const userInsertResult = await pool.query(userInsertQuery, [
       username,
       passwordHash,
-      newPrjMgrId
+      newPrjMgrId,
+      email
     ]);
 
     await pool.query('COMMIT');

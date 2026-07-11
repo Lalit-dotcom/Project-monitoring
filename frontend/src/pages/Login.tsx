@@ -6,22 +6,53 @@ import { toast } from '../lib/toast';
 
 export const Login: React.FC = () => {
   const navigate = useNavigate();
-  const { login } = useAuth();
+  const { login, verifyMfa } = useAuth();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [rememberMe, setRememberMe] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
+  // MFA states
+  const [mfaRequired, setMfaRequired] = useState(false);
+  const [mfaToken, setMfaToken] = useState('');
+  const [mfaCode, setMfaCode] = useState('');
+  const [useBackupCode, setUseBackupCode] = useState(false);
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsSubmitting(true);
     try {
-      await login(email, password);
+      const data = await login(email, password);
+      if (data && data.mfaRequired) {
+        setMfaRequired(true);
+        setMfaToken(data.mfaToken);
+        setMfaCode('');
+        toast.info('Two-Factor Authentication is required for superadmin accounts');
+      } else {
+        toast.success('Signed in successfully — welcome back!');
+        navigate('/dashboard');
+      }
+    } catch (err: any) {
+      toast.error(`Login failed — ${err.message || 'Invalid username or password'}`);
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleMfaSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!mfaCode) {
+      toast.error('Code is required');
+      return;
+    }
+    setIsSubmitting(true);
+    try {
+      await verifyMfa(mfaToken, mfaCode);
       toast.success('Signed in successfully — welcome back!');
       navigate('/dashboard');
     } catch (err: any) {
-      toast.error(`Login failed — ${err.message || 'Invalid username or password'}`);
+      toast.error(`MFA verification failed — ${err.message || 'Invalid code'}`);
     } finally {
       setIsSubmitting(false);
     }
@@ -128,126 +159,212 @@ export const Login: React.FC = () => {
 
           {/* Center Form Section */}
           <div className="space-y-6 my-auto max-w-[380px] w-full mx-auto">
-            <div className="space-y-1.5">
-              <h1 className="font-headline text-3xl font-extrabold text-[#14335C] tracking-tight">
-                Sign in
-              </h1>
-              <p className="font-sans text-xs text-[#6B7280]">
-                Enter your credentials to access the dashboard
-              </p>
-            </div>
-
-            {/* Form inputs */}
-            <form className="space-y-4" onSubmit={handleSubmit} aria-label="Login form">
-              
-              {/* Username Input */}
-              <div className="relative group">
-                <div className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400 group-focus-within:text-[#0D9488] transition-colors pointer-events-none">
-                  <User className="w-5 h-5" />
-                </div>
-                <input 
-                  id="username"
-                  type="text"
-                  required
-                  placeholder="Username"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  autoComplete="username"
-                  className="w-full h-12 pl-11 pr-4 rounded-xl bg-[#F3F4F6] text-sm text-[#14335C] placeholder-gray-400 border-none outline-none focus:bg-white focus:ring-2 focus:ring-[#0D9488] transition-all"
-                  aria-label="Username"
-                />
-              </div>
-
-              {/* Password Input */}
-              <div className="relative group">
-                <div className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400 group-focus-within:text-[#0D9488] transition-colors pointer-events-none">
-                  <Lock className="w-5 h-5" />
-                </div>
-                <input 
-                  id="password"
-                  type={showPassword ? 'text' : 'password'}
-                  required
-                  placeholder="Password"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  autoComplete="current-password"
-                  className="w-full h-12 pl-11 pr-16 rounded-xl bg-[#F3F4F6] text-sm text-[#14335C] placeholder-gray-400 border-none outline-none focus:bg-white focus:ring-2 focus:ring-[#0D9488] transition-all"
-                  aria-label="Password"
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowPassword(!showPassword)}
-                  className="absolute right-4 top-1/2 -translate-y-1/2 font-headline text-xs font-bold text-[#0D9488] hover:text-[#0F766E] transition-colors focus:outline-none"
-                  aria-label={showPassword ? 'Hide password' : 'Show password'}
-                >
-                  {showPassword ? 'Hide' : 'Show'}
-                </button>
-              </div>
-
-              {/* Checkbox Row */}
-              <div className="flex items-center justify-between text-xs select-none">
-                <div className="flex items-center gap-2 cursor-pointer">
-                  <input 
-                    id="remember"
-                    type="checkbox"
-                    checked={rememberMe}
-                    onChange={(e) => setRememberMe(e.target.checked)}
-                    className="w-4 h-4 rounded border-[#E2E8F0] text-[#0D9488] focus:ring-[#0D9488] cursor-pointer"
-                  />
-                  <label htmlFor="remember" className="text-[#6B7280] cursor-pointer font-sans">
-                    Remember me
-                  </label>
-                </div>
-                <a 
-                  href="#"
-                  onClick={(e) => {
-                    e.preventDefault();
-                    toast.info('Please contact your zonal administrator to reset credentials.');
-                  }}
-                  className="font-headline font-bold text-[#0D9488] hover:underline"
-                >
-                  Forgot Password?
-                </a>
-              </div>
-
-              {/* Action Buttons */}
-              <div className="space-y-4 pt-2">
-                {/* Submit button */}
-                <button
-                  type="submit"
-                  disabled={isSubmitting}
-                  className="w-full h-12 bg-[#0D9488] hover:bg-[#0F766E] text-white font-headline text-sm font-semibold rounded-xl flex items-center justify-center gap-2 shadow-sm transition-all duration-200 hover:scale-[1.01] active:scale-[0.99] disabled:opacity-60 disabled:cursor-not-allowed focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0D9488] focus-visible:ring-offset-2"
-                >
-                  {isSubmitting ? (
-                    <>
-                      <span className="w-4 h-4 border-2 border-white/40 border-t-white rounded-full animate-spin" aria-hidden="true" />
-                      <span>Signing in...</span>
-                    </>
-                  ) : (
-                    <>
-                      <span>Sign In</span>
-                      <ArrowRight className="w-4 h-4" aria-hidden="true" />
-                    </>
-                  )}
-                </button>
-
-                {/* Divider Row */}
-                <div className="relative flex py-1 items-center select-none">
-                  <div className="flex-grow border-t border-gray-100"></div>
-                  <span className="flex-shrink mx-3 text-[10px] text-gray-400 uppercase tracking-widest font-bold">Or</span>
-                  <div className="flex-grow border-t border-gray-100"></div>
+            {!mfaRequired ? (
+              <>
+                <div className="space-y-1.5">
+                  <h1 className="font-headline text-3xl font-extrabold text-[#14335C] tracking-tight">
+                    Sign in
+                  </h1>
+                  <p className="font-sans text-xs text-[#6B7280]">
+                    Enter your credentials to access the dashboard
+                  </p>
                 </div>
 
-                {/* SSO Button */}
-                <button
-                  type="button"
-                  onClick={handleSSOLogin}
-                  className="w-full h-12 border border-[#1B3E7A] text-[#1B3E7A] hover:bg-[#1B3E7A]/5 font-headline text-xs font-semibold rounded-xl flex items-center justify-center gap-2 transition-all"
-                >
-                  <span>Sign in with Government SSO</span>
-                </button>
-              </div>
-            </form>
+                {/* Form inputs */}
+                <form className="space-y-4" onSubmit={handleSubmit} aria-label="Login form">
+                  
+                  {/* Username Input */}
+                  <div className="relative group">
+                    <div className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400 group-focus-within:text-[#0D9488] transition-colors pointer-events-none">
+                      <User className="w-5 h-5" />
+                    </div>
+                    <input 
+                      id="username"
+                      type="text"
+                      required
+                      placeholder="Username"
+                      value={email}
+                      onChange={(e) => setEmail(e.target.value)}
+                      autoComplete="username"
+                      className="w-full h-12 pl-11 pr-4 rounded-xl bg-[#F3F4F6] text-sm text-[#14335C] placeholder-gray-400 border-none outline-none focus:bg-white focus:ring-2 focus:ring-[#0D9488] transition-all"
+                      aria-label="Username"
+                    />
+                  </div>
+
+                  {/* Password Input */}
+                  <div className="relative group">
+                    <div className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400 group-focus-within:text-[#0D9488] transition-colors pointer-events-none">
+                      <Lock className="w-5 h-5" />
+                    </div>
+                    <input 
+                      id="password"
+                      type={showPassword ? 'text' : 'password'}
+                      required
+                      placeholder="Password"
+                      value={password}
+                      onChange={(e) => setPassword(e.target.value)}
+                      autoComplete="current-password"
+                      className="w-full h-12 pl-11 pr-16 rounded-xl bg-[#F3F4F6] text-sm text-[#14335C] placeholder-gray-400 border-none outline-none focus:bg-white focus:ring-2 focus:ring-[#0D9488] transition-all"
+                      aria-label="Password"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowPassword(!showPassword)}
+                      className="absolute right-4 top-1/2 -translate-y-1/2 font-headline text-xs font-bold text-[#0D9488] hover:text-[#0F766E] transition-colors focus:outline-none"
+                      aria-label={showPassword ? 'Hide password' : 'Show password'}
+                    >
+                      {showPassword ? 'Hide' : 'Show'}
+                    </button>
+                  </div>
+
+                  {/* Checkbox Row */}
+                  <div className="flex items-center justify-between text-xs select-none">
+                    <div className="flex items-center gap-2 cursor-pointer">
+                      <input 
+                        id="remember"
+                        type="checkbox"
+                        checked={rememberMe}
+                        onChange={(e) => setRememberMe(e.target.checked)}
+                        className="w-4 h-4 rounded border-[#E2E8F0] text-[#0D9488] focus:ring-[#0D9488] cursor-pointer"
+                      />
+                      <label htmlFor="remember" className="text-[#6B7280] cursor-pointer font-sans">
+                        Remember me
+                      </label>
+                    </div>
+                    <a 
+                      href="#"
+                      onClick={(e) => {
+                        e.preventDefault();
+                        toast.info('Please contact your zonal administrator to reset credentials.');
+                      }}
+                      className="font-headline font-bold text-[#0D9488] hover:underline"
+                    >
+                      Forgot Password?
+                    </a>
+                  </div>
+
+                  {/* Action Buttons */}
+                  <div className="space-y-4 pt-2">
+                    {/* Submit button */}
+                    <button
+                      type="submit"
+                      disabled={isSubmitting}
+                      className="w-full h-12 bg-[#0D9488] hover:bg-[#0F766E] text-white font-headline text-sm font-semibold rounded-xl flex items-center justify-center gap-2 shadow-sm transition-all duration-200 hover:scale-[1.01] active:scale-[0.99] disabled:opacity-60 disabled:cursor-not-allowed focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0D9488] focus-visible:ring-offset-2"
+                    >
+                      {isSubmitting ? (
+                        <>
+                          <span className="w-4 h-4 border-2 border-white/40 border-t-white rounded-full animate-spin" aria-hidden="true" />
+                          <span>Signing in...</span>
+                        </>
+                      ) : (
+                        <>
+                          <span>Sign In</span>
+                          <ArrowRight className="w-4 h-4" aria-hidden="true" />
+                        </>
+                      )}
+                    </button>
+
+                    {/* Divider Row */}
+                    <div className="relative flex py-1 items-center select-none">
+                      <div className="flex-grow border-t border-gray-100"></div>
+                      <span className="flex-shrink mx-3 text-[10px] text-gray-400 uppercase tracking-widest font-bold">Or</span>
+                      <div className="flex-grow border-t border-gray-100"></div>
+                    </div>
+
+                    {/* SSO Button */}
+                    <button
+                      type="button"
+                      onClick={handleSSOLogin}
+                      className="w-full h-12 border border-[#1B3E7A] text-[#1B3E7A] hover:bg-[#1B3E7A]/5 font-headline text-xs font-semibold rounded-xl flex items-center justify-center gap-2 transition-all"
+                    >
+                      <span>Sign in with Government SSO</span>
+                    </button>
+                  </div>
+                </form>
+              </>
+            ) : (
+              <>
+                <div className="space-y-1.5">
+                  <h1 className="font-headline text-3xl font-extrabold text-[#14335C] tracking-tight">
+                    Security Verification
+                  </h1>
+                  <p className="font-sans text-xs text-[#6B7280]">
+                    Enter the code from your authenticator app to complete sign in
+                  </p>
+                </div>
+
+                {/* MFA Form */}
+                <form className="space-y-4" onSubmit={handleMfaSubmit} aria-label="MFA verification form">
+                  
+                  {/* Verification Code Input */}
+                  <div className="relative group">
+                    <div className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400 group-focus-within:text-[#0D9488] transition-colors pointer-events-none">
+                      <Lock className="w-5 h-5" />
+                    </div>
+                    <input 
+                      id="mfaCode"
+                      type="text"
+                      required
+                      maxLength={useBackupCode ? 10 : 6}
+                      placeholder={useBackupCode ? "10-character backup code" : "6-digit verification code"}
+                      value={mfaCode}
+                      onChange={(e) => setMfaCode(useBackupCode ? e.target.value : e.target.value.replace(/\D/g, ''))}
+                      className="w-full h-12 pl-11 pr-4 rounded-xl bg-[#F3F4F6] text-sm text-[#14335C] placeholder-gray-400 border-none outline-none focus:bg-white focus:ring-2 focus:ring-[#0D9488] transition-all font-mono tracking-widest text-center text-lg font-bold"
+                      aria-label="Verification Code"
+                    />
+                  </div>
+
+                  {/* Backup Code Toggle */}
+                  <div className="flex items-center justify-between text-xs select-none">
+                    <button 
+                      type="button"
+                      onClick={() => {
+                        setUseBackupCode(!useBackupCode);
+                        setMfaCode('');
+                      }}
+                      className="font-headline font-bold text-[#0D9488] hover:underline"
+                    >
+                      {useBackupCode ? "Use standard 6-digit TOTP" : "Use a backup code instead"}
+                    </button>
+                  </div>
+
+                  {/* Action Buttons */}
+                  <div className="space-y-4 pt-2">
+                    {/* Submit button */}
+                    <button
+                      type="submit"
+                      disabled={isSubmitting}
+                      className="w-full h-12 bg-[#0D9488] hover:bg-[#0F766E] text-white font-headline text-sm font-semibold rounded-xl flex items-center justify-center gap-2 shadow-sm transition-all duration-200 hover:scale-[1.01] active:scale-[0.99] disabled:opacity-60 disabled:cursor-not-allowed focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0D9488] focus-visible:ring-offset-2"
+                    >
+                      {isSubmitting ? (
+                        <>
+                          <span className="w-4 h-4 border-2 border-white/40 border-t-white rounded-full animate-spin" aria-hidden="true" />
+                          <span>Verifying code...</span>
+                        </>
+                      ) : (
+                        <>
+                          <span>Verify & Sign In</span>
+                          <ArrowRight className="w-4 h-4" aria-hidden="true" />
+                        </>
+                      )}
+                    </button>
+
+                    {/* Back Button */}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setMfaRequired(false);
+                        setMfaToken('');
+                        setMfaCode('');
+                      }}
+                      className="w-full h-12 border border-gray-300 text-gray-700 hover:bg-gray-50 font-headline text-xs font-semibold rounded-xl flex items-center justify-center gap-2 transition-all"
+                    >
+                      <span>Back to Sign In</span>
+                    </button>
+                  </div>
+                </form>
+              </>
+            )}
           </div>
 
           {/* Bottom Lockup */}

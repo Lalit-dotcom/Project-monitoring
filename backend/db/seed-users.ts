@@ -39,18 +39,23 @@ async function seedUsers() {
 
     // 3. Seed users
     console.log('Seeding superadmin "lalit"...');
+    // Ensure to fallback to a placeholder if process.env.ADMIN_EMAIL isn't set, as requested
+    const adminEmail = process.env.ADMIN_EMAIL || 'lalit@example.com';
     await client.query(`
-      INSERT INTO users (username, password_hash, role, prj_mgr_id)
-      VALUES ('lalit', $1, 'superadmin', NULL)
-      ON CONFLICT (username) DO NOTHING
-    `, [lalitHash]);
+      INSERT INTO users (username, password_hash, role, prj_mgr_id, email)
+      VALUES ('lalit', $1, 'superadmin', NULL, $2)
+      ON CONFLICT (username) DO UPDATE SET email = $2
+    `, [lalitHash, adminEmail]);
 
     console.log('Seeding project manager "atul"...');
+    const atulEmailResult = await client.query('SELECT email FROM project_managers WHERE prj_mgr_id = 1626');
+    const atulEmail = atulEmailResult.rows.length > 0 ? atulEmailResult.rows[0].email : null;
+    
     await client.query(`
-      INSERT INTO users (username, password_hash, role, prj_mgr_id)
-      VALUES ('atul', $1, 'project_manager', 1626)
-      ON CONFLICT (username) DO NOTHING
-    `, [atulHash]);
+      INSERT INTO users (username, password_hash, role, prj_mgr_id, email)
+      VALUES ('atul', $1, 'project_manager', 1626, $2)
+      ON CONFLICT (username) DO UPDATE SET email = $2
+    `, [atulHash, atulEmail]);
 
     console.log('User seeding completed successfully.');
   } catch (err: any) {

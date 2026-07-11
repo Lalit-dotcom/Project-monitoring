@@ -16,6 +16,7 @@ import { Notifications } from './pages/Notifications';
 import { Administration } from './pages/Administration';
 import { Managers } from './pages/Managers';
 import { AI } from './pages/AI';
+import { Settings } from './pages/Settings';
 import { AuthProvider } from './context/AuthContext';
 import { ProtectedRoute } from './components/ProtectedRoute';
 import { ThemeProvider } from './context/ThemeContext';
@@ -59,6 +60,7 @@ const App: React.FC = () => {
               <Route path="/administration" element={<ErrorBoundary><Administration /></ErrorBoundary>} />
               <Route path="/administration/managers" element={<ErrorBoundary><Managers /></ErrorBoundary>} />
               <Route path="/ai" element={<ErrorBoundary><AI /></ErrorBoundary>} />
+              <Route path="/settings" element={<ErrorBoundary><Settings /></ErrorBoundary>} />
             </Route>
           </Route>
 
