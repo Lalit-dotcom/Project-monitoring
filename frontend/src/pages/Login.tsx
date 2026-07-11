@@ -19,6 +19,105 @@ export const Login: React.FC = () => {
   const [mfaCode, setMfaCode] = useState('');
   const [useBackupCode, setUseBackupCode] = useState(false);
 
+  // Forgot Password states
+  const [forgotPasswordMode, setForgotPasswordMode] = useState(false);
+  const [forgotStep, setForgotStep] = useState<'username' | 'otp' | 'reset'>('username');
+  const [forgotUsername, setForgotUsername] = useState('');
+  const [otpCode, setOtpCode] = useState('');
+  const [resetToken, setResetToken] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+
+  const handleForgotUsernameSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!forgotUsername) {
+      toast.error('Username is required');
+      return;
+    }
+    setIsSubmitting(true);
+    try {
+      const res = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:4000'}/api/auth/forgot-password`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username: forgotUsername })
+      });
+      if (!res.ok) {
+        const errData = await res.json();
+        throw new Error(errData.error || 'Failed to request OTP');
+      }
+      toast.success('An OTP code has been sent to your registered email address.');
+      setForgotStep('otp');
+    } catch (err: any) {
+      toast.error(err.message || 'Failed to request OTP');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleForgotOtpSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!otpCode) {
+      toast.error('OTP code is required');
+      return;
+    }
+    setIsSubmitting(true);
+    try {
+      const res = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:4000'}/api/auth/verify-otp`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username: forgotUsername, code: otpCode })
+      });
+      if (!res.ok) {
+        const errData = await res.json();
+        throw new Error(errData.error || 'Failed to verify OTP');
+      }
+      const data = await res.json();
+      setResetToken(data.resetToken);
+      toast.success('OTP verified successfully.');
+      setForgotStep('reset');
+    } catch (err: any) {
+      toast.error(err.message || 'Verification failed');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleForgotResetSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newPassword || !confirmPassword) {
+      toast.error('Both password fields are required');
+      return;
+    }
+    if (newPassword !== confirmPassword) {
+      toast.error('Passwords do not match');
+      return;
+    }
+    setIsSubmitting(true);
+    try {
+      const res = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:4000'}/api/auth/reset-password`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ resetToken, newPassword })
+      });
+      if (!res.ok) {
+        const errData = await res.json();
+        throw new Error(errData.error || 'Failed to reset password');
+      }
+      toast.success('Password updated successfully. Please sign in with your new password.');
+      setForgotPasswordMode(false);
+      setForgotStep('username');
+      setForgotUsername('');
+      setOtpCode('');
+      setResetToken('');
+      setNewPassword('');
+      setConfirmPassword('');
+    } catch (err: any) {
+      toast.error(err.message || 'Password reset failed');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsSubmitting(true);
@@ -159,7 +258,203 @@ export const Login: React.FC = () => {
 
           {/* Center Form Section */}
           <div className="space-y-6 my-auto max-w-[380px] w-full mx-auto">
-            {!mfaRequired ? (
+            {forgotPasswordMode ? (
+              <>
+                {forgotStep === 'username' && (
+                  <>
+                    <div className="space-y-1.5">
+                      <h1 className="font-headline text-3xl font-extrabold text-[#14335C] tracking-tight">
+                        Forgot Password
+                      </h1>
+                      <p className="font-sans text-xs text-[#6B7280]">
+                        Enter your username to request a verification OTP
+                      </p>
+                    </div>
+
+                    <form className="space-y-4" onSubmit={handleForgotUsernameSubmit} aria-label="Forgot password form">
+                      {/* Username Input */}
+                      <div className="relative group">
+                        <div className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400 group-focus-within:text-[#0D9488] transition-colors pointer-events-none">
+                          <User className="w-5 h-5" />
+                        </div>
+                        <input 
+                          id="forgotUsername"
+                          type="text"
+                          required
+                          placeholder="Username"
+                          value={forgotUsername}
+                          onChange={(e) => setForgotUsername(e.target.value)}
+                          autoComplete="username"
+                          className="w-full h-12 pl-11 pr-4 rounded-xl bg-[#F3F4F6] text-sm text-[#14335C] placeholder-gray-400 border-none outline-none focus:bg-white focus:ring-2 focus:ring-[#0D9488] transition-all"
+                          aria-label="Username"
+                        />
+                      </div>
+
+                      <div className="space-y-4 pt-2">
+                        <button
+                          type="submit"
+                          disabled={isSubmitting}
+                          className="w-full h-12 bg-[#0D9488] hover:bg-[#0F766E] text-white font-headline text-sm font-semibold rounded-xl flex items-center justify-center gap-2 shadow-sm transition-all duration-200 hover:scale-[1.01] active:scale-[0.99] disabled:opacity-60 disabled:cursor-not-allowed focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0D9488] focus-visible:ring-offset-2"
+                        >
+                          {isSubmitting ? (
+                            <>
+                              <span className="w-4 h-4 border-2 border-white/40 border-t-white rounded-full animate-spin" aria-hidden="true" />
+                              <span>Sending OTP...</span>
+                            </>
+                          ) : (
+                            <>
+                              <span>Request OTP</span>
+                              <ArrowRight className="w-4 h-4" aria-hidden="true" />
+                            </>
+                          )}
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setForgotPasswordMode(false);
+                            setForgotStep('username');
+                          }}
+                          className="w-full h-12 border border-gray-300 text-gray-700 hover:bg-gray-50 font-headline text-xs font-semibold rounded-xl flex items-center justify-center gap-2 transition-all"
+                        >
+                          <span>Back to Sign In</span>
+                        </button>
+                      </div>
+                    </form>
+                  </>
+                )}
+
+                {forgotStep === 'otp' && (
+                  <>
+                    <div className="space-y-1.5">
+                      <h1 className="font-headline text-3xl font-extrabold text-[#14335C] tracking-tight">
+                        Verify OTP
+                      </h1>
+                      <p className="font-sans text-xs text-[#6B7280]">
+                        Enter the 6-digit OTP code sent to your email
+                      </p>
+                    </div>
+
+                    <form className="space-y-4" onSubmit={handleForgotOtpSubmit} aria-label="OTP verification form">
+                      {/* OTP Input */}
+                      <div className="relative group">
+                        <div className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400 group-focus-within:text-[#0D9488] transition-colors pointer-events-none">
+                          <Lock className="w-5 h-5" />
+                        </div>
+                        <input 
+                          id="otpCode"
+                          type="text"
+                          required
+                          maxLength={6}
+                          placeholder="6-digit OTP code"
+                          value={otpCode}
+                          onChange={(e) => setOtpCode(e.target.value.replace(/\D/g, ''))}
+                          className="w-full h-12 pl-11 pr-4 rounded-xl bg-[#F3F4F6] text-sm text-[#14335C] placeholder-gray-400 border-none outline-none focus:bg-white focus:ring-2 focus:ring-[#0D9488] transition-all font-mono tracking-widest text-center text-lg font-bold"
+                          aria-label="OTP Code"
+                        />
+                      </div>
+
+                      <div className="space-y-4 pt-2">
+                        <button
+                          type="submit"
+                          disabled={isSubmitting}
+                          className="w-full h-12 bg-[#0D9488] hover:bg-[#0F766E] text-white font-headline text-sm font-semibold rounded-xl flex items-center justify-center gap-2 shadow-sm transition-all duration-200 hover:scale-[1.01] active:scale-[0.99] disabled:opacity-60 disabled:cursor-not-allowed focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0D9488] focus-visible:ring-offset-2"
+                        >
+                          {isSubmitting ? (
+                            <>
+                              <span className="w-4 h-4 border-2 border-white/40 border-t-white rounded-full animate-spin" aria-hidden="true" />
+                              <span>Verifying...</span>
+                            </>
+                          ) : (
+                            <>
+                              <span>Verify Code</span>
+                              <ArrowRight className="w-4 h-4" aria-hidden="true" />
+                            </>
+                          )}
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => setForgotStep('username')}
+                          className="w-full h-12 border border-gray-300 text-gray-700 hover:bg-gray-50 font-headline text-xs font-semibold rounded-xl flex items-center justify-center gap-2 transition-all"
+                        >
+                          <span>Back</span>
+                        </button>
+                      </div>
+                    </form>
+                  </>
+                )}
+
+                {forgotStep === 'reset' && (
+                  <>
+                    <div className="space-y-1.5">
+                      <h1 className="font-headline text-3xl font-extrabold text-[#14335C] tracking-tight">
+                        Reset Password
+                      </h1>
+                      <p className="font-sans text-xs text-[#6B7280]">
+                        Enter your new password below
+                      </p>
+                    </div>
+
+                    <form className="space-y-4" onSubmit={handleForgotResetSubmit} aria-label="Reset password form">
+                      {/* New Password */}
+                      <div className="relative group">
+                        <div className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400 group-focus-within:text-[#0D9488] transition-colors pointer-events-none">
+                          <Lock className="w-5 h-5" />
+                        </div>
+                        <input 
+                          id="newPassword"
+                          type="password"
+                          required
+                          placeholder="New Password"
+                          value={newPassword}
+                          onChange={(e) => setNewPassword(e.target.value)}
+                          className="w-full h-12 pl-11 pr-4 rounded-xl bg-[#F3F4F6] text-sm text-[#14335C] placeholder-gray-400 border-none outline-none focus:bg-white focus:ring-2 focus:ring-[#0D9488] transition-all"
+                          aria-label="New Password"
+                        />
+                      </div>
+
+                      {/* Confirm Password */}
+                      <div className="relative group">
+                        <div className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400 group-focus-within:text-[#0D9488] transition-colors pointer-events-none">
+                          <Lock className="w-5 h-5" />
+                        </div>
+                        <input 
+                          id="confirmPassword"
+                          type="password"
+                          required
+                          placeholder="Confirm New Password"
+                          value={confirmPassword}
+                          onChange={(e) => setConfirmPassword(e.target.value)}
+                          className="w-full h-12 pl-11 pr-4 rounded-xl bg-[#F3F4F6] text-sm text-[#14335C] placeholder-gray-400 border-none outline-none focus:bg-white focus:ring-2 focus:ring-[#0D9488] transition-all"
+                          aria-label="Confirm Password"
+                        />
+                      </div>
+
+                      <div className="space-y-4 pt-2">
+                        <button
+                          type="submit"
+                          disabled={isSubmitting}
+                          className="w-full h-12 bg-[#0D9488] hover:bg-[#0F766E] text-white font-headline text-sm font-semibold rounded-xl flex items-center justify-center gap-2 shadow-sm transition-all duration-200 hover:scale-[1.01] active:scale-[0.99] disabled:opacity-60 disabled:cursor-not-allowed focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0D9488] focus-visible:ring-offset-2"
+                        >
+                          {isSubmitting ? (
+                            <>
+                              <span className="w-4 h-4 border-2 border-white/40 border-t-white rounded-full animate-spin" aria-hidden="true" />
+                              <span>Updating Password...</span>
+                            </>
+                          ) : (
+                            <>
+                              <span>Reset Password</span>
+                              <ArrowRight className="w-4 h-4" aria-hidden="true" />
+                            </>
+                          )}
+                        </button>
+                      </div>
+                    </form>
+                  </>
+                )}
+              </>
+            ) : !mfaRequired ? (
               <>
                 <div className="space-y-1.5">
                   <h1 className="font-headline text-3xl font-extrabold text-[#14335C] tracking-tight">
@@ -235,7 +530,9 @@ export const Login: React.FC = () => {
                       href="#"
                       onClick={(e) => {
                         e.preventDefault();
-                        toast.info('Please contact your zonal administrator to reset credentials.');
+                        setForgotUsername(email);
+                        setForgotPasswordMode(true);
+                        setForgotStep('username');
                       }}
                       className="font-headline font-bold text-[#0D9488] hover:underline"
                     >

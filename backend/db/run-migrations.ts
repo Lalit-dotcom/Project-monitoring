@@ -69,6 +69,23 @@ async function migrate() {
       ALTER TABLE sessions ADD COLUMN IF NOT EXISTS rotated_at TIMESTAMP;
     `);
 
+    console.log('Creating password_reset_otps table if it does not exist...');
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS password_reset_otps (
+        id SERIAL PRIMARY KEY,
+        username TEXT NOT NULL,
+        code TEXT NOT NULL,
+        expires_at TIMESTAMP NOT NULL,
+        used BOOLEAN DEFAULT FALSE,
+        attempt_count INTEGER DEFAULT 0,
+        created_at TIMESTAMP DEFAULT now()
+      );
+    `);
+
+    await client.query(`
+      ALTER TABLE password_reset_otps ADD COLUMN IF NOT EXISTS attempt_count INTEGER DEFAULT 0;
+    `);
+
     console.log('Migrations executed successfully.');
   } catch (err: any) {
     console.error('Migration failed:', err.message);

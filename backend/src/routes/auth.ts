@@ -208,12 +208,159 @@ router.post('/forgot-password', async (req: Request, res: Response): Promise<voi
     const email = userResult.rows[0].email;
     const otp = Math.floor(100000 + Math.random() * 900000).toString(); // 6 digit OTP
     
+    // Invalidate any existing unused OTPs for this user
+    await pool.query(
+      `UPDATE password_reset_otps SET used = true WHERE username = $1 AND used = false`,
+      [username]
+    );
+
+    // Save the new OTP
+    const expiresAt = new Date(Date.now() + 5 * 60 * 1000); // 5 minutes expiry
+    await pool.query(
+      `INSERT INTO password_reset_otps (username, code, expires_at) VALUES ($1, $2, $3)`,
+      [username, otp, expiresAt]
+    );
+
     // Simulate sending email
     console.log(`[SIMULATED EMAIL] Sending Password Reset OTP to ${email}: ${otp}`);
 
     res.json({ message: 'If an account exists with that username and has an email associated, a reset OTP has been sent.' });
   } catch (err: any) {
     console.error('Forgot password error:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// POST /api/auth/verify-otp
+router.post('/verify-otp', async (req: Request, res: Response): Promise<void> => {
+  const { username, code } = req.body;
+  const ip = req.ip || 'unknown';
+
+  if (!username || !code) {
+    res.status(400).json({ error: 'Username and OTP code are required' });
+    return;
+  }
+
+  try {
+    // Look up the latest OTP row for this username
+    const otpResult = await pool.query(
+      `SELECT id, code, expires_at, used, attempt_count FROM password_reset_otps 
+       WHERE username = $1 
+       ORDER BY created_at DESC LIMIT 1`,
+      [username]
+    );
+
+    const otpRow = otpResult.rows[0];
+
+    if (!otpRow) {
+      logAuthEvent(username, ip, 'OTP_VERIFY_FAILED: no_otp_found');
+      res.status(400).json({ error: 'Invalid username or OTP code.' });
+      return;
+    }
+
+    if (otpRow.used) {
+      logAuthEvent(username, ip, 'OTP_VERIFY_FAILED: otp_already_used');
+      res.status(400).json({ error: 'OTP code has already been used or locked. Please request a new code.' });
+      return;
+    }
+
+    const isExpired = new Date(otpRow.expires_at).getTime() < Date.now();
+    if (isExpired) {
+      logAuthEvent(username, ip, 'OTP_VERIFY_FAILED: otp_expired');
+      res.status(400).json({ error: 'OTP code has expired. Please request a new code.' });
+      return;
+    }
+
+    // Check attempt limit BEFORE checking code
+    if (otpRow.attempt_count >= 5) {
+      await pool.query('UPDATE password_reset_otps SET used = true WHERE id = $1', [otpRow.id]);
+      logAuthEvent(username, ip, 'OTP_VERIFY_FAILED: locked_out_pre_check');
+      res.status(400).json({ error: 'Too many incorrect attempts. Please request a new code.' });
+      return;
+    }
+
+    // Increment attempt count
+    const newAttemptCount = otpRow.attempt_count + 1;
+    await pool.query(
+      `UPDATE password_reset_otps SET attempt_count = $1 WHERE id = $2`,
+      [newAttemptCount, otpRow.id]
+    );
+
+    // Verify code
+    if (otpRow.code === code) {
+      // Code is correct, mark as used and issue reset token
+      await pool.query('UPDATE password_reset_otps SET used = true WHERE id = $1', [otpRow.id]);
+      
+      const resetSecret = process.env.JWT_SECRET || 'super_secret_placeholder_change_me';
+      const resetToken = jwt.sign(
+        { username, purpose: 'password_reset' },
+        resetSecret,
+        { expiresIn: '5m' } // Short-lived reset token
+      );
+
+      logAuthEvent(username, ip, 'OTP_VERIFY_SUCCESS');
+      res.json({ resetToken });
+    } else {
+      // Code is incorrect
+      logAuthEvent(username, ip, `OTP_VERIFY_FAILED: incorrect_code_attempt_${newAttemptCount}`);
+
+      if (newAttemptCount >= 5) {
+        // Lock out
+        await pool.query('UPDATE password_reset_otps SET used = true WHERE id = $1', [otpRow.id]);
+        res.status(400).json({ error: 'Too many incorrect attempts. Please request a new code.' });
+      } else {
+        res.status(400).json({ error: 'Invalid OTP code.' });
+      }
+    }
+  } catch (err: any) {
+    console.error('Verify OTP error:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// POST /api/auth/reset-password
+router.post('/reset-password', async (req: Request, res: Response): Promise<void> => {
+  const { resetToken, newPassword } = req.body;
+  const ip = req.ip || 'unknown';
+
+  if (!resetToken || !newPassword) {
+    res.status(400).json({ error: 'Reset token and new password are required' });
+    return;
+  }
+
+  try {
+    const resetSecret = process.env.JWT_SECRET || 'super_secret_placeholder_change_me';
+    let decoded: { username: string; purpose: string };
+    
+    try {
+      decoded = jwt.verify(resetToken, resetSecret) as { username: string; purpose: string };
+    } catch (tokenErr) {
+      res.status(400).json({ error: 'Invalid or expired reset token. Please request a new code.' });
+      return;
+    }
+
+    if (decoded.purpose !== 'password_reset') {
+      res.status(400).json({ error: 'Invalid token purpose' });
+      return;
+    }
+
+    // Update password
+    const passwordHash = await bcrypt.hash(newPassword, 10);
+    await pool.query(
+      `UPDATE users SET password_hash = $1 WHERE username = $2`,
+      [passwordHash, decoded.username]
+    );
+
+    // Invalidate all active sessions for this user
+    await pool.query(
+      `UPDATE sessions SET revoked = true WHERE user_id = (SELECT id FROM users WHERE username = $1)`,
+      [decoded.username]
+    );
+
+    logAuthEvent(decoded.username, ip, 'PASSWORD_RESET_SUCCESS');
+    res.json({ success: true, message: 'Password updated successfully. Please log in.' });
+  } catch (err: any) {
+    console.error('Reset password error:', err);
     res.status(500).json({ error: 'Internal server error' });
   }
 });
