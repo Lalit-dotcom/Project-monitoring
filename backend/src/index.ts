@@ -17,6 +17,12 @@ import taxInvoicesRouter from './routes/taxInvoices.js';
 import pmSummaryRouter from './routes/pmSummary.js';
 import dashboardRouter from './routes/dashboard.js';
 import managersRouter from './routes/managers.js';
+import exportsRouter from './routes/exports.js';
+import noticesRouter from './routes/notices.js';
+import auditLogsRouter from './routes/auditLogs.js';
+import notificationsRouter from './routes/notifications.js';
+import cron from 'node-cron';
+import { runNotificationCheck } from './jobs/notificationCheck.js';
 
 const app = express();
 const port = process.env.PORT || 4000;
@@ -55,6 +61,10 @@ app.use('/api/tax-invoices', requireAuth, scopeToOwnProjects, taxInvoicesRouter)
 app.use('/api/pm-summary', requireAuth, scopeToOwnProjects, pmSummaryRouter);
 app.use('/api/dashboard', requireAuth, scopeToOwnProjects, dashboardRouter);
 app.use('/api/managers', requireAuth, managersRouter);
+app.use('/api/exports', requireAuth, scopeToOwnProjects, exportsRouter);
+app.use('/api/notices', requireAuth, noticesRouter);
+app.use('/api/audit-logs', requireAuth, auditLogsRouter);
+app.use('/api/notifications', requireAuth, notificationsRouter);
 
 // Health check endpoint
 app.get('/api/health', (req, res) => {
@@ -64,4 +74,10 @@ app.get('/api/health', (req, res) => {
 // Start Express Listener
 app.listen(port, () => {
   console.log(`NPMS Backend Server listening on http://localhost:${port}`);
+  
+  // Start the periodic notification checker (on startup and every 30 minutes)
+  runNotificationCheck().catch(err => console.error('Error running notification check on startup:', err));
+  cron.schedule('*/30 * * * *', () => {
+    runNotificationCheck().catch(err => console.error('Error running notification check cron:', err));
+  });
 });

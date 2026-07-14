@@ -21,7 +21,7 @@ import {
   ExternalLink
 } from 'lucide-react';
 import { api } from '../lib/api';
-import type { Project, Invoice } from '../types';
+import type { Project, Invoice, PurchaseOrder, DatabaseProject } from '../types';
 import { useTheme } from '../context/ThemeContext';
 import { Breadcrumbs } from '../components/Breadcrumbs';
 import { toast } from '../lib/toast';
@@ -29,19 +29,25 @@ import { toast } from '../lib/toast';
 export const Reports: React.FC = () => {
   const { theme } = useTheme();
   const navigate = useNavigate();
-  const [projects, setProjects] = useState<Project[]>([]);
+  const [projects, setProjects] = useState<(Project & DatabaseProject)[]>([]);
   const [invoices, setInvoices] = useState<Invoice[]>([]);
+  const [purchaseOrders, setPurchaseOrders] = useState<PurchaseOrder[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedProject, setSelectedProject] = useState('All');
+  const [isExportingPdf, setIsExportingPdf] = useState(false);
   const dateRange = 'Oct 1, 2026 - Dec 31, 2026';
 
   useEffect(() => {
     const loadReportData = async () => {
       try {
-        const projs = await api.getProjects();
-        const invs = await api.getInvoices();
+        const [projs, invs, pos] = await Promise.all([
+          api.getProjects(),
+          api.getInvoices(),
+          api.getPurchaseOrders()
+        ]);
         setProjects(projs);
         setInvoices(invs);
+        setPurchaseOrders(pos);
       } catch (err) {
         console.error(err);
         toast.error("Couldn't load Reports — check your connection");
@@ -68,37 +74,174 @@ export const Reports: React.FC = () => {
     return <div className="text-secondary font-headline p-8">Loading financial reports...</div>;
   }
 
-  // Lifecycle Chart Data
-  const lifecycleData = [
-    { name: 'Week 1', PO: 12.0, Received: 6.0, Paid: 4.5 },
-    { name: 'Week 3', PO: 15.0, Received: 8.5, Paid: 7.0 },
-    { name: 'Week 6', PO: 18.0, Received: 12.0, Paid: 10.0 },
-    { name: 'Week 9', PO: 24.0, Received: 17.5, Paid: 15.0 },
-    { name: 'Week 12', PO: 27.7, Received: 20.2, Paid: 20.2 },
-  ];
+  // Filter helper based on selectedProject
+  const filteredProjects = selectedProject === 'All'
+    ? projects
+    : projects.filter(p => String(p.id) === selectedProject || p.projectCd === selectedProject);
+
+  const getLifecycleData = () => {
+    const projectFilter = selectedProject;
+    
+    const filteredInvoices = projectFilter === 'All' 
+      ? invoices 
+      : invoices.filter(i => String(i.projectId) === projectFilter || i.projectNo === projectFilter);
+      
+    const filteredPOs = projectFilter === 'All'
+      ? purchaseOrders
+      : purchaseOrders.filter(po => String(po.projectId) === projectFilter || po.projectNo === projectFilter);
+
+    // Group by month
+    const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    const monthlyMap: { [key: string]: { PO: number; Received: number; Paid: number; sortKey: number } } = {};
+    
+    filteredPOs.forEach(po => {
+      if (!po.poDate) return;
+      const d = new Date(po.poDate);
+      if (isNaN(d.getTime())) return;
+      const mName = monthNames[d.getMonth()];
+      const year = d.getFullYear();
+      const key = `${mName} ${year}`;
+      const sortKey = d.getFullYear() * 100 + d.getMonth();
+      if (!monthlyMap[key]) {
+        monthlyMap[key] = { PO: 0, Received: 0, Paid: 0, sortKey };
+      }
+      monthlyMap[key].PO += (po.total || 0);
+    });
+
+    filteredInvoices.forEach(inv => {
+      if (!inv.invoiceDate) return;
+      const d = new Date(inv.invoiceDate);
+      if (isNaN(d.getTime())) return;
+      const mName = monthNames[d.getMonth()];
+      const year = d.getFullYear();
+      const key = `${mName} ${year}`;
+      const sortKey = d.getFullYear() * 100 + d.getMonth();
+      if (!monthlyMap[key]) {
+        monthlyMap[key] = { PO: 0, Received: 0, Paid: 0, sortKey };
+      }
+      monthlyMap[key].Received += (inv.invoiceAmount || 0);
+      monthlyMap[key].Paid += (inv.amountPaid || 0);
+    });
+
+    const sortedData = Object.entries(monthlyMap)
+      .map(([name, vals]) => ({
+        name,
+        PO: parseFloat((vals.PO / 10000000).toFixed(2)),          // to Cr
+        Received: parseFloat((vals.Received / 10000000).toFixed(2)), // to Cr
+        Paid: parseFloat((vals.Paid / 10000000).toFixed(2)),          // to Cr
+        sortKey: vals.sortKey
+      }))
+      .sort((a, b) => a.sortKey - b.sortKey);
+
+    if (sortedData.length === 0) {
+      return [
+        { name: 'No Data', PO: 0, Received: 0, Paid: 0 }
+      ];
+    }
+    
+    return sortedData.slice(-6); // last 6 months of data
+  };
+
+  const lifecycleData = getLifecycleData();
 
   // Aging Pie Chart Data
-  const agingData = theme === 'dark' ? [
-    { name: 'Current (60%)', value: 60, color: '#6bd8cb' },
-    { name: '30-60d (25%)', value: 25, color: '#005049' },
-    { name: '60-90d (10%)', value: 10, color: '#c0c7d6' },
-    { name: '90+d (5%)', value: 5, color: '#ffb4ab' }
-  ] : [
-    { name: 'Current (60%)', value: 60, color: '#00685f' },
-    { name: '30-60d (25%)', value: 25, color: '#008378' },
-    { name: '60-90d (10%)', value: 10, color: '#555c6a' },
-    { name: '90+d (5%)', value: 5, color: '#ba1a1a' }
-  ];
+  const getAgingData = () => {
+    const projectFilter = selectedProject;
+    const filteredInvoices = projectFilter === 'All'
+      ? invoices
+      : invoices.filter(i => String(i.projectId) === projectFilter || i.projectNo === projectFilter);
+
+    let current = 0;
+    let d30_60 = 0;
+    let d60_90 = 0;
+    let d90_plus = 0;
+    const today = new Date();
+    
+    filteredInvoices.forEach(inv => {
+      const unpaid = inv.unpaid || 0;
+      if (unpaid <= 0) return;
+      
+      if (!inv.invoiceDate) {
+        current += unpaid;
+        return;
+      }
+      const invDate = new Date(inv.invoiceDate);
+      const diffTime = Math.abs(today.getTime() - invDate.getTime());
+      const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+      
+      if (diffDays <= 30) {
+        current += unpaid;
+      } else if (diffDays <= 60) {
+        d30_60 += unpaid;
+      } else if (diffDays <= 90) {
+        d60_90 += unpaid;
+      } else {
+        d90_plus += unpaid;
+      }
+    });
+
+    const total = current + d30_60 + d60_90 + d90_plus;
+    const displayTotal = total || 1;
+    const pCurrent = Math.round((current / displayTotal) * 100);
+    const p30_60 = Math.round((d30_60 / displayTotal) * 100);
+    const p60_90 = Math.round((d60_90 / displayTotal) * 100);
+    const p90_plus = Math.max(0, 100 - pCurrent - p30_60 - p60_90);
+
+    return {
+      total,
+      data: [
+        { name: `Current (${pCurrent}%)`, value: current, color: theme === 'dark' ? '#6bd8cb' : '#00685f' },
+        { name: `30-60d (${p30_60}%)`, value: d30_60, color: theme === 'dark' ? '#005049' : '#008378' },
+        { name: `60-90d (${p60_90}%)`, value: d60_90, color: theme === 'dark' ? '#c0c7d6' : '#555c6a' },
+        { name: `90+d (${p90_plus}%)`, value: d90_plus, color: theme === 'dark' ? '#ffb4ab' : '#ba1a1a' }
+      ]
+    };
+  };
+
+  const agingResult = getAgingData();
+  const agingData = agingResult.data;
+  const totalOutstanding = agingResult.total;
 
   // Map and sort top revenue channels based on our real projects
-  const topChannels = [...projects]
-    .sort((a, b) => b.poAmount - a.poAmount)
+  const topChannels = [...filteredProjects]
+    .sort((a, b) => (b.poAmount || 0) - (a.poAmount || 0))
     .slice(0, 4);
   const maxPoAmount = topChannels[0]?.poAmount || 1;
 
-  // Outstanding sum for aging center text
-  const totalOutstanding = invoices
-    .reduce((sum, i) => sum + (i.unpaid || 0), 0);
+  // Insights Calculations
+  const getAvgCollectionTime = () => {
+    const projectFilter = selectedProject;
+    const filteredInvoices = projectFilter === 'All'
+      ? invoices
+      : invoices.filter(i => String(i.projectId) === projectFilter || i.projectNo === projectFilter);
+
+    const paidInvoices = filteredInvoices.filter(i => i.invoiceDate && i.glDate && (i.amountPaid || 0) > 0);
+    if (paidInvoices.length === 0) return 24; // fallback baseline
+    const totalDays = paidInvoices.reduce((sum, i) => {
+      const start = new Date(i.invoiceDate!);
+      const end = new Date(i.glDate!);
+      const diff = Math.ceil((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24));
+      return sum + Math.max(0, diff);
+    }, 0);
+    return Math.round(totalDays / paidInvoices.length);
+  };
+  const avgCollectionTime = getAvgCollectionTime();
+
+  const getUnbilledRevenue = () => {
+    const totalBudget = filteredProjects.reduce((sum, p) => sum + (p.prjBudgetNo || 0), 0);
+    const totalInvoiced = filteredProjects.reduce((sum, p) => sum + (p.totalInvoiceAmount || p.invoiceAmount || 0), 0);
+    return Math.max(0, totalBudget - totalInvoiced);
+  };
+  const unbilledRevenue = getUnbilledRevenue();
+
+  const getDisputedInvoicesCount = () => {
+    const projectFilter = selectedProject;
+    const filteredInvoices = projectFilter === 'All'
+      ? invoices
+      : invoices.filter(i => String(i.projectId) === projectFilter || i.projectNo === projectFilter);
+    return filteredInvoices.filter(i => i.objection && i.objection !== '' && (i.unpaid || 0) > 0).length;
+  };
+  const disputedInvoicesCount = getDisputedInvoicesCount();
 
   return (
     <div className="space-y-stack-lg max-w-[1400px] mx-auto w-full">
@@ -126,18 +269,25 @@ export const Reports: React.FC = () => {
             >
               <option value="All">All Projects</option>
               {projects.map(p => (
-                <option key={p.id} value={p.id}>{p.id}</option>
+                <option key={p.id} value={p.id}>{p.id} - {p.name.slice(0, 25)}...</option>
               ))}
             </select>
             <Filter className="w-4 h-4 text-secondary absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none" />
           </div>
 
           <button 
-            onClick={() => alert('PDF report exported successfully.')}
-            className="bg-primary hover:bg-primary-container text-on-primary font-headline text-sm font-semibold px-6 py-2 rounded-lg flex items-center gap-2 transition-all shadow-sm"
+            onClick={async () => {
+              setIsExportingPdf(true);
+              try {
+                await api.exportDashboardPdf();
+              } catch (_) {}
+              finally { setIsExportingPdf(false); }
+            }}
+            disabled={isExportingPdf}
+            className="bg-primary hover:bg-primary-container text-on-primary font-headline text-sm font-semibold px-6 py-2 rounded-lg flex items-center gap-2 transition-all shadow-sm disabled:opacity-60"
           >
             <Download className="w-4 h-4" />
-            <span>Export PDF</span>
+            <span>{isExportingPdf ? 'Generating...' : 'Export PDF'}</span>
           </button>
         </div>
       </div>
@@ -299,8 +449,8 @@ export const Reports: React.FC = () => {
           </div>
           <div>
             <p className="font-headline text-[10px] text-secondary font-bold uppercase tracking-wider">Avg. Collection Time</p>
-            <p className="font-headline text-2xl font-bold text-on-surface mt-1">24 Days</p>
-            <p className="font-sans text-[11px] text-primary font-medium mt-0.5">3 days faster than last quarter</p>
+            <p className="font-headline text-2xl font-bold text-on-surface mt-1">{avgCollectionTime} Days</p>
+            <p className="font-sans text-[11px] text-primary font-medium mt-0.5">Derived from real historical payments</p>
           </div>
         </div>
 
@@ -311,8 +461,8 @@ export const Reports: React.FC = () => {
           </div>
           <div>
             <p className="font-headline text-[10px] text-secondary font-bold uppercase tracking-wider">Unbilled Revenue</p>
-            <p className="font-headline text-2xl font-bold text-on-surface mt-1">{formatINR(8500000)}</p>
-            <p className="font-sans text-[11px] text-secondary mt-0.5">Projections for next 30 days</p>
+            <p className="font-headline text-2xl font-bold text-on-surface mt-1">{formatINR(unbilledRevenue)}</p>
+            <p className="font-sans text-[11px] text-secondary mt-0.5">Budget remaining to be invoiced</p>
           </div>
         </div>
 
@@ -323,8 +473,8 @@ export const Reports: React.FC = () => {
           </div>
           <div>
             <p className="font-headline text-[10px] text-secondary font-bold uppercase tracking-wider">Disputed Invoices</p>
-            <p className="font-headline text-2xl font-bold text-error mt-1">02 Alerts</p>
-            <p className="font-sans text-[11px] text-error font-medium mt-0.5">Requires immediate attention</p>
+            <p className="font-headline text-2xl font-bold text-error mt-1">{String(disputedInvoicesCount).padStart(2, '0')} Alerts</p>
+            <p className="font-sans text-[11px] text-error font-medium mt-0.5">Unpaid invoices with objection flags</p>
           </div>
         </div>
       </div>

@@ -65,3 +65,13 @@ export function getInvoicesDisputedUnpaidSql(): string {
 export function getTaxInvoicesMissingIrnSql(): string {
   return `(tax_invoices.irn_no IS NULL OR tax_invoices.irn_no = '') AND tax_invoices.bill_date < CURRENT_DATE - INTERVAL '${STALE_MISSING_IRN_DAYS} days'`;
 }
+
+// 10. Projects Page: Due This Week — PO Expiring in Next 7 Days
+export function getProjectsDueThisWeekSql(): string {
+  return `EXISTS (
+    SELECT 1 FROM purchase_orders po 
+    WHERE po.project_no = projects.project_cd 
+      AND po.valid_to >= CURRENT_DATE 
+      AND po.valid_to <= CURRENT_DATE + INTERVAL '7 days'
+  )`;
+}

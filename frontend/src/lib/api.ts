@@ -1,5 +1,5 @@
-import { mockInvoices, mockPurchaseOrders, mockTaxInvoices, mockActivities, mockNotifications, mockUsers } from '../data/mockData';
 import type { Project, Invoice, PurchaseOrder, TaxInvoice, BillDeskRecord, Activity, Notification, User, DatabaseProject } from '../types';
+import { toast } from './toast';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:4000';
 
@@ -127,25 +127,45 @@ const mapDbProjectToProject = (dbProj: DatabaseProject): Project & DatabaseProje
   };
 };
 
+const initialDemoNotifications: Notification[] = [
+  {
+    id: 'N-001',
+    title: 'System Synchronized',
+    description: 'All project databases have been synchronized with the Ministry treasury gateway.',
+    timestamp: '10 mins ago',
+    type: 'success',
+    read: false
+  },
+  {
+    id: 'N-002',
+    title: 'Overdue Invoice Alert',
+    description: 'Invoice INV-2024-007 for India Port Rail & Ropeway Corp is overdue by 12 days.',
+    timestamp: '1 hour ago',
+    type: 'warning',
+    read: false
+  },
+  {
+    id: 'N-003',
+    title: 'PO Approval Pending',
+    description: 'PO-2024-113 for National Automotive Test Tracks requires director approval.',
+    timestamp: '5 hours ago',
+    type: 'info',
+    read: true
+  },
+  {
+    id: 'N-004',
+    title: 'Billing Milestone Reached',
+    description: 'All India Institute of Sciences Bathinda has reached 100% billing settlement.',
+    timestamp: '1 day ago',
+    type: 'success',
+    read: true
+  }
+];
+
 // Helper to initialize local storage data if not present
 const initStorage = () => {
-  if (!localStorage.getItem('npms_invoices')) {
-    localStorage.setItem('npms_invoices', JSON.stringify(mockInvoices));
-  }
-  if (!localStorage.getItem('npms_purchase_orders')) {
-    localStorage.setItem('npms_purchase_orders', JSON.stringify(mockPurchaseOrders));
-  }
-  if (!localStorage.getItem('npms_tax_invoices')) {
-    localStorage.setItem('npms_tax_invoices', JSON.stringify(mockTaxInvoices));
-  }
-  if (!localStorage.getItem('npms_activities')) {
-    localStorage.setItem('npms_activities', JSON.stringify(mockActivities));
-  }
   if (!localStorage.getItem('npms_notifications')) {
-    localStorage.setItem('npms_notifications', JSON.stringify(mockNotifications));
-  }
-  if (!localStorage.getItem('npms_users')) {
-    localStorage.setItem('npms_users', JSON.stringify(mockUsers));
+    localStorage.setItem('npms_notifications', JSON.stringify(initialDemoNotifications));
   }
 };
 
@@ -301,6 +321,65 @@ export const api = {
     return res.json();
   },
 
+  getPOStatuses: async (): Promise<string[]> => {
+    const res = await fetchWithAuth(`${API_URL}/api/purchase-orders/statuses`);
+    if (!res.ok) {
+      throw new Error('Failed to fetch purchase order statuses');
+    }
+    return res.json();
+  },
+
+  getInvoiceTypes: async (): Promise<string[]> => {
+    const res = await fetchWithAuth(`${API_URL}/api/invoices/types`);
+    if (!res.ok) {
+      throw new Error('Failed to fetch invoice types');
+    }
+    return res.json();
+  },
+
+  getBillDeskStatuses: async (): Promise<string[]> => {
+    const res = await fetchWithAuth(`${API_URL}/api/bill-desk/statuses`);
+    if (!res.ok) {
+      throw new Error('Failed to fetch bill desk statuses');
+    }
+    return res.json();
+  },
+
+  getTaxInvoiceBillTypes: async (): Promise<string[]> => {
+    const res = await fetchWithAuth(`${API_URL}/api/tax-invoices/bill-types`);
+    if (!res.ok) {
+      throw new Error('Failed to fetch tax invoice bill types');
+    }
+    return res.json();
+  },
+
+  getTaxInvoiceStates: async (): Promise<string[]> => {
+    const res = await fetchWithAuth(`${API_URL}/api/tax-invoices/states`);
+    if (!res.ok) {
+      throw new Error('Failed to fetch tax invoice states');
+    }
+    return res.json();
+  },
+
+  getProjectsSummary: async (): Promise<{
+    totalProjects: number;
+    totalManagers: number;
+    projectsAtRisk: number;
+    dueThisWeek: number;
+    incompleteProjects: number;
+    riskBreakdown: {
+      vendorOverpaid: number;
+      billingAhead: number;
+      stalled: number;
+    };
+  }> => {
+    const res = await fetchWithAuth(`${API_URL}/api/projects/summary`);
+    if (!res.ok) {
+      throw new Error('Failed to fetch projects summary');
+    }
+    return res.json();
+  },
+
   createProject: async (project: Omit<Project, 'poCount' | 'poAmount' | 'invoiceAmount' | 'amountPaid' | 'taxInvoiceAmount' | 'healthScore'>): Promise<Project> => {
     const newProject: Project = {
       ...project,
@@ -312,6 +391,40 @@ export const api = {
       healthScore: 100
     };
     return newProject;
+  },
+
+  createProjectChain: async (data: {
+    project: any;
+    purchaseOrder?: any;
+    invoice?: any;
+    billDesk?: any;
+    taxInvoice?: any;
+  }): Promise<any> => {
+    const res = await fetchWithAuth(`${API_URL}/api/projects/create-with-chain`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(data)
+    });
+    if (!res.ok) {
+      const errData = await res.json().catch(() => ({}));
+      throw {
+        status: res.status,
+        message: errData.error || 'Failed to create project',
+        errors: errData.errors
+      };
+    }
+    return res.json();
+  },
+
+  checkProjectCdUnique: async (projectCd: string): Promise<boolean> => {
+    const res = await fetchWithAuth(`${API_URL}/api/projects/check-unique/${encodeURIComponent(projectCd)}`);
+    if (!res.ok) {
+      throw new Error('Failed to verify project code uniqueness');
+    }
+    const data = await res.json();
+    return data.unique;
   },
 
   // INVOICES
@@ -436,32 +549,58 @@ export const api = {
 
   // ACTIVITIES
   getActivities: async (): Promise<Activity[]> => {
-    return getStorageItem<Activity>('npms_activities');
+    return [];
   },
 
   // NOTIFICATIONS
-  getNotifications: async (): Promise<Notification[]> => {
-    return getStorageItem<Notification>('npms_notifications');
+  getNotifications: async (params?: {
+    unreadOnly?: boolean;
+    category?: string;
+    page?: number;
+    pageSize?: number;
+  }): Promise<{ data: Notification[]; count: number; unreadCount: number }> => {
+    const qParams = new URLSearchParams();
+    if (params) {
+      if (params.unreadOnly !== undefined) qParams.set('unreadOnly', String(params.unreadOnly));
+      if (params.category) qParams.set('category', params.category);
+      if (params.page !== undefined) qParams.set('page', String(params.page));
+      if (params.pageSize !== undefined) qParams.set('pageSize', String(params.pageSize));
+    }
+    const res = await fetchWithAuth(`${API_URL}/api/notifications?${qParams.toString()}`);
+    if (!res.ok) {
+      const json = await res.json().catch(() => ({}));
+      throw new Error(json.error || 'Failed to fetch notifications feed');
+    }
+    return res.json();
   },
 
   markNotificationAsRead: async (id: string): Promise<void> => {
-    const notifications = getStorageItem<Notification>('npms_notifications');
-    const index = notifications.findIndex(n => n.id === id);
-    if (index !== -1) {
-      notifications[index].read = true;
-      setStorageItem('npms_notifications', notifications);
+    const res = await fetchWithAuth(`${API_URL}/api/notifications/${id}/read`, {
+      method: 'POST'
+    });
+    if (!res.ok) {
+      const json = await res.json().catch(() => ({}));
+      throw new Error(json.error || 'Failed to mark notification as read');
     }
   },
 
   markAllNotificationsAsRead: async (): Promise<void> => {
-    const notifications = getStorageItem<Notification>('npms_notifications');
-    notifications.forEach(n => n.read = true);
-    setStorageItem('npms_notifications', notifications);
+    const res = await fetchWithAuth(`${API_URL}/api/notifications/read-all`, {
+      method: 'POST'
+    });
+    if (!res.ok) {
+      const json = await res.json().catch(() => ({}));
+      throw new Error(json.error || 'Failed to mark all notifications as read');
+    }
   },
 
   // USERS
   getUsers: async (): Promise<User[]> => {
-    return getStorageItem<User>('npms_users');
+    const res = await fetchWithAuth(`${API_URL}/api/auth/users`);
+    if (!res.ok) {
+      throw new Error('Failed to fetch users');
+    }
+    return res.json();
   },
 
   // DASHBOARD METRICS
@@ -481,14 +620,37 @@ export const api = {
     return res.json();
   },
 
-  getDashboardProjectComparison: async (prjMgrId?: number | null): Promise<{ projectComparison: any[] }> => {
-    const params = new URLSearchParams();
+  getDashboardProjectComparison: async (metric: string, prjMgrId?: number | null): Promise<{ projectComparison: any[] }> => {
+    const params = new URLSearchParams({ metric });
     if (prjMgrId != null) params.set('prjMgrId', String(prjMgrId));
-    const query = params.toString() ? `?${params.toString()}` : '';
-    const res = await fetchWithAuth(`${API_URL}/api/dashboard/project-comparison${query}`);
+    const res = await fetchWithAuth(`${API_URL}/api/dashboard/project-comparison?${params.toString()}`);
     if (!res.ok) {
       throw new Error('Failed to fetch project comparison');
     }
+    return res.json();
+  },
+
+  getDashboardProjectRisks: async (type: string, prjMgrId?: number | null): Promise<{ chartType: 'comparison' | 'single'; series: any[] }> => {
+    const params = new URLSearchParams({ type });
+    if (prjMgrId != null) params.set('prjMgrId', String(prjMgrId));
+    const res = await fetchWithAuth(`${API_URL}/api/dashboard/risks/projects?${params.toString()}`);
+    if (!res.ok) throw new Error('Failed to fetch project risks');
+    return res.json();
+  },
+
+  getDashboardPoRisks: async (type: string, prjMgrId?: number | null): Promise<{ chartType: 'comparison' | 'single'; series: any[] }> => {
+    const params = new URLSearchParams({ type });
+    if (prjMgrId != null) params.set('prjMgrId', String(prjMgrId));
+    const res = await fetchWithAuth(`${API_URL}/api/dashboard/risks/purchase-orders?${params.toString()}`);
+    if (!res.ok) throw new Error('Failed to fetch purchase order risks');
+    return res.json();
+  },
+
+  getDashboardInvoiceRisks: async (type: string, prjMgrId?: number | null): Promise<{ chartType: 'comparison' | 'single'; series: any[] }> => {
+    const params = new URLSearchParams({ type });
+    if (prjMgrId != null) params.set('prjMgrId', String(prjMgrId));
+    const res = await fetchWithAuth(`${API_URL}/api/dashboard/risks/invoices?${params.toString()}`);
+    if (!res.ok) throw new Error('Failed to fetch invoice risks');
     return res.json();
   },
 
@@ -595,5 +757,186 @@ export const api = {
       throw new Error('Failed to fetch 2FA status');
     }
     return res.json();
+  },
+
+  exportProjectFile: async (code: string, format: 'excel' | 'pdf'): Promise<void> => {
+    try {
+      const res = await fetchWithAuth(`${API_URL}/api/exports/project/${code}/${format}`);
+      if (!res.ok) {
+        throw new Error(`Server returned ${res.status}: ${res.statusText}`);
+      }
+      const blob = await res.blob();
+      const contentDisposition = res.headers.get('Content-Disposition');
+      let filename = `${code}-export.${format === 'excel' ? 'xlsx' : 'pdf'}`;
+      if (contentDisposition) {
+        const matches = /filename="([^"]+)"/.exec(contentDisposition);
+        if (matches && matches[1]) {
+          filename = matches[1];
+        }
+      }
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.URL.revokeObjectURL(url);
+    } catch (err: any) {
+      toast.error('Export failed', err.message || 'An error occurred during file export.');
+      throw err;
+    }
+  },
+
+  exportProjectsFile: async (filters: ProjectFilters, format: 'excel' | 'pdf'): Promise<void> => {
+    try {
+      const queryParams = new URLSearchParams();
+      if (filters) {
+        Object.entries(filters).forEach(([key, val]) => {
+          if (val !== undefined && val !== null) {
+            queryParams.append(key, String(val));
+          }
+        });
+      }
+      const res = await fetchWithAuth(`${API_URL}/api/exports/projects/${format}?${queryParams.toString()}`);
+      if (!res.ok) {
+        throw new Error(`Server returned ${res.status}: ${res.statusText}`);
+      }
+      const blob = await res.blob();
+      const contentDisposition = res.headers.get('Content-Disposition');
+      let filename = `projects-export.${format === 'excel' ? 'xlsx' : 'pdf'}`;
+      if (contentDisposition) {
+        const matches = /filename="([^"]+)"/.exec(contentDisposition);
+        if (matches && matches[1]) {
+          filename = matches[1];
+        }
+      }
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.URL.revokeObjectURL(url);
+    } catch (err: any) {
+      toast.error('Export failed', err.message || 'An error occurred during file export.');
+      throw err;
+    }
+  },
+
+  exportListFile: async (
+    resource: 'purchase-orders' | 'invoices' | 'bill-desk' | 'tax-invoices',
+    filters: Record<string, string | number | boolean | undefined | null>,
+    format: 'excel' | 'pdf'
+  ): Promise<void> => {
+    try {
+      const queryParams = new URLSearchParams();
+      if (filters) {
+        Object.entries(filters).forEach(([key, val]) => {
+          if (val !== undefined && val !== null && val !== '') {
+            queryParams.append(key, String(val));
+          }
+        });
+      }
+      const res = await fetchWithAuth(`${API_URL}/api/exports/${resource}/${format}?${queryParams.toString()}`);
+      if (!res.ok) {
+        throw new Error(`Server returned ${res.status}: ${res.statusText}`);
+      }
+      const blob = await res.blob();
+      const contentDisposition = res.headers.get('Content-Disposition');
+      let filename = `${resource}-export.${format === 'excel' ? 'xlsx' : 'pdf'}`;
+      if (contentDisposition) {
+        const matches = /filename="([^"]+)"/.exec(contentDisposition);
+        if (matches && matches[1]) {
+          filename = matches[1];
+        }
+      }
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.URL.revokeObjectURL(url);
+    } catch (err: any) {
+      toast.error('Export failed', err.message || 'An error occurred during file export.');
+      throw err;
+    }
+  },
+
+  exportDashboardPdf: async (prjMgrId?: string): Promise<void> => {
+    try {
+      const queryParams = new URLSearchParams();
+      if (prjMgrId && prjMgrId !== 'All') {
+        queryParams.append('prjMgrId', prjMgrId);
+      }
+      const res = await fetchWithAuth(`${API_URL}/api/exports/dashboard/pdf?${queryParams.toString()}`);
+      if (!res.ok) {
+        throw new Error(`Server returned ${res.status}: ${res.statusText}`);
+      }
+      const blob = await res.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'dashboard-executive-summary.pdf';
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.URL.revokeObjectURL(url);
+    } catch (err: any) {
+      toast.error('Export failed', err.message || 'An error occurred during PDF export.');
+      throw err;
+    }
+  },
+
+  getAuditLogs: async (params: {
+    category?: string;
+    status?: string;
+    username?: string;
+    dateFrom?: string;
+    dateTo?: string;
+    search?: string;
+    page?: number;
+    pageSize?: number;
+  }): Promise<{ data: any[]; count: number }> => {
+    const qParams = new URLSearchParams();
+    if (params.category) qParams.set('category', params.category);
+    if (params.status) qParams.set('status', params.status);
+    if (params.username) qParams.set('username', params.username);
+    if (params.dateFrom) qParams.set('dateFrom', params.dateFrom);
+    if (params.dateTo) qParams.set('dateTo', params.dateTo);
+    if (params.search) qParams.set('search', params.search);
+    if (params.page !== undefined) qParams.set('page', String(params.page));
+    if (params.pageSize !== undefined) qParams.set('pageSize', String(params.pageSize));
+
+    const res = await fetchWithAuth(`${API_URL}/api/audit-logs?${qParams.toString()}`);
+    if (!res.ok) {
+      const json = await res.json().catch(() => ({}));
+      throw new Error(json.error || 'Failed to fetch audit logs');
+    }
+    return res.json();
+  },
+
+  /**
+   * Send a project notice email (vendor bills or client funds) via the backend.
+   * The server re-fetches the project data from DB before building the email.
+   */
+  sendNotice: async (
+    projectId: string,
+    noticeType: 'vendor_pending_bills' | 'client_pending_funds',
+    toEmail: string
+  ): Promise<void> => {
+    const res = await fetchWithAuth(`${API_URL}/api/notices/send`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ projectId, noticeType, toEmail }),
+    });
+    if (!res.ok) {
+      const json = await res.json().catch(() => ({}));
+      throw new Error(json.error || `Server returned ${res.status}`);
+    }
   }
 };
+

@@ -15,6 +15,7 @@ import { Reports } from './pages/Reports';
 import { Notifications } from './pages/Notifications';
 import { Administration } from './pages/Administration';
 import { Managers } from './pages/Managers';
+import { AuditLogs } from './pages/AuditLogs';
 import { AI } from './pages/AI';
 import { Settings } from './pages/Settings';
 import { AuthProvider } from './context/AuthContext';
@@ -59,6 +60,7 @@ const App: React.FC = () => {
               <Route path="/notifications" element={<ErrorBoundary><Notifications /></ErrorBoundary>} />
               <Route path="/administration" element={<ErrorBoundary><Administration /></ErrorBoundary>} />
               <Route path="/administration/managers" element={<ErrorBoundary><Managers /></ErrorBoundary>} />
+              <Route path="/administration/audit-logs" element={<ErrorBoundary><AuditLogs /></ErrorBoundary>} />
               <Route path="/ai" element={<ErrorBoundary><AI /></ErrorBoundary>} />
               <Route path="/settings" element={<ErrorBoundary><Settings /></ErrorBoundary>} />
             </Route>

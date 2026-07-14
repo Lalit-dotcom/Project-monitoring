@@ -1,18 +1,23 @@
 import React, { useState, useEffect } from 'react';
-import { Outlet, useLocation } from 'react-router-dom';
+import { Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { Sidebar } from './Sidebar';
 import { Topbar } from './Topbar';
-import { ChevronDown, Plus, CreditCard, Download } from 'lucide-react';
+import { AddProjectWizard } from './AddProjectWizard';
+import { Download, ChevronLeft } from 'lucide-react';
 import { api } from '../lib/api';
 import { toast } from '../lib/toast';
 import type { Notification } from '../types';
 
 export const Layout: React.FC = () => {
   const location = useLocation();
+  const navigate = useNavigate();
   const [searchQuery, setSearchQuery] = useState('');
   const [notifications, setNotifications] = useState<Notification[]>([]);
+  const [unreadCount, setUnreadCount] = useState(0);
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [isMobileOpen, setIsMobileOpen] = useState(false);
+  const [isWizardOpen, setIsWizardOpen] = useState(false);
+  const [refreshTrigger, setRefreshTrigger] = useState(0);
 
   // Auto-collapse sidebar below 1024px
   useEffect(() => {
@@ -31,12 +36,19 @@ export const Layout: React.FC = () => {
   // Load notifications to calculate unread counts
   const loadNotifications = async () => {
     try {
-      const data = await api.getNotifications();
-      setNotifications(data);
+      const result = await api.getNotifications({ pageSize: 50 });
+      setNotifications(result.data);
+      setUnreadCount(result.unreadCount);
     } catch (err) {
       console.error(err);
     }
   };
+
+  useEffect(() => {
+    loadNotifications();
+    const interval = setInterval(loadNotifications, 60000);
+    return () => clearInterval(interval);
+  }, []);
 
   useEffect(() => {
     loadNotifications();
@@ -49,67 +61,22 @@ export const Layout: React.FC = () => {
     setIsMobileOpen(false);
   }, [location.pathname]);
 
-  const unreadCount = notifications.filter(n => !n.read).length;
-
   // Determine topbar parameters based on route
   let placeholder = "Search projects, invoices, or POs...";
   let action: React.ReactNode = null;
 
   if (location.pathname === '/dashboard') {
     placeholder = "Search projects, invoices, or activities...";
-    action = (
-      <div className="relative group">
-        <button
-          className="flex items-center gap-2 bg-surface-container-low border border-outline-variant px-3 py-1.5 rounded-lg text-sm font-headline font-semibold text-secondary hover:text-primary transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
-          aria-label="Select workspace"
-        >
-          <span>NPMS Enterprise</span>
-          <ChevronDown className="w-4 h-4 text-outline" aria-hidden="true" />
-        </button>
-      </div>
-    );
+    action = null;
   } else if (location.pathname === '/projects') {
     placeholder = "Search by Project No, client or details...";
-    action = (
-      <button
-        onClick={() => {
-          toast.info('New Project — coming soon');
-        }}
-        className="bg-[#111827] hover:bg-[#1f2937] text-white px-4 py-2 rounded-full font-headline text-sm font-semibold flex items-center gap-2 transition-colors shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#111827] focus-visible:ring-offset-1"
-        aria-label="Create a new project"
-      >
-        <Plus className="w-4 h-4" aria-hidden="true" />
-        <span>New Project</span>
-      </button>
-    );
+    action = null;
   } else if (location.pathname.startsWith('/projects/')) {
     placeholder = "Search invoices in this project...";
-    action = (
-      <button
-        onClick={() => {
-          toast.info('Create Invoice — coming soon');
-        }}
-        className="bg-[#111827] hover:bg-[#1f2937] text-white px-4 py-2 rounded-full font-headline text-sm font-semibold flex items-center gap-2 transition-colors shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#111827] focus-visible:ring-offset-1"
-        aria-label="Create a new invoice for this project"
-      >
-        <Plus className="w-4 h-4" aria-hidden="true" />
-        <span>Create Invoice</span>
-      </button>
-    );
+    action = null;
   } else if (location.pathname === '/bill-desk') {
     placeholder = "Search invoices in bill desk...";
-    action = (
-      <button
-        onClick={() => {
-          toast.info('Create Invoice — coming soon');
-        }}
-        className="bg-[#111827] hover:bg-[#1f2937] text-white px-4 py-2 rounded-full font-headline text-sm font-semibold flex items-center gap-2 transition-colors shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#111827] focus-visible:ring-offset-1"
-        aria-label="Create a new bill desk invoice"
-      >
-        <CreditCard className="w-4 h-4" aria-hidden="true" />
-        <span>Create Invoice</span>
-      </button>
-    );
+    action = null;
   } else if (location.pathname === '/reports') {
     placeholder = "Search report segments...";
     action = (
@@ -136,6 +103,36 @@ export const Layout: React.FC = () => {
     placeholder = "Search settings and users...";
   }
 
+  // Consolidated back navigation handler with browser history navigate(-1) and /dashboard fallback
+  const handleBack = () => {
+    if (window.history.state && window.history.state.idx > 0) {
+      navigate(-1);
+    } else {
+      navigate('/dashboard');
+    }
+  };
+
+  let backButton: React.ReactNode = null;
+  const backButtonClass = "h-10 px-4 py-2 border border-outline-variant hover:border-outline text-secondary hover:bg-surface-container-low rounded-full font-sans text-xs font-bold flex items-center gap-2 transition-all bg-white shadow-sm shrink-0";
+
+  const showBackButton = [
+    '/purchase-orders',
+    '/invoices',
+    '/bill-desk',
+    '/tax-invoices',
+    '/reports',
+    '/notifications'
+  ].includes(location.pathname) || (location.pathname.startsWith('/projects/') && location.pathname !== '/projects');
+
+  if (showBackButton) {
+    backButton = (
+      <button onClick={handleBack} className={backButtonClass}>
+        <ChevronLeft className="w-4 h-4 shrink-0 text-secondary" />
+        <span>Back</span>
+      </button>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-background text-on-surface">
       {/* Sidebar Navigation */}
@@ -156,6 +153,7 @@ export const Layout: React.FC = () => {
         unreadCount={unreadCount}
         isCollapsed={isCollapsed}
         onHamburgerClick={() => setIsMobileOpen(true)}
+        backButton={backButton}
       />
 
       {/* Main Content Layout — with route fade transition */}
@@ -166,9 +164,20 @@ export const Layout: React.FC = () => {
       >
         {/* Key on pathname so each route gets a fresh fade-in */}
         <div key={location.pathname} className="animate-page-fade">
-          <Outlet context={{ searchQuery, unreadCount, reloadNotifications: loadNotifications }} />
+          <Outlet context={{ searchQuery, unreadCount, reloadNotifications: loadNotifications, projectsRefreshTrigger: refreshTrigger }} />
         </div>
       </main>
+
+      {isWizardOpen && (
+        <AddProjectWizard
+          onClose={() => setIsWizardOpen(false)}
+          onSuccess={(projectCd) => {
+            setIsWizardOpen(false);
+            toast.success(`Project ${projectCd} created successfully`);
+            setRefreshTrigger(prev => prev + 1);
+          }}
+        />
+      )}
     </div>
   );
 };

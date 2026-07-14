@@ -7,17 +7,13 @@ import { generateSecret, generateURI, verify } from 'otplib';
 import QRCode from 'qrcode';
 import { pool } from '../db.js';
 import { requireAuth, AuthenticatedRequest } from '../middleware/requireAuth.js';
+import { logAudit } from '../lib/auditLog.js';
+import { createNotification } from '../lib/createNotification.js';
 
 const router = Router();
 
 // In-memory store for rate limiting attempts (login usernames)
 const failedAttempts = new Map<string, { count: number; lockoutUntil?: number }>();
-
-// Security Audit Event Logger
-function logAuthEvent(username: string, ip: string, outcome: string) {
-  const timestamp = new Date().toISOString();
-  console.log(`[${timestamp}] AUTH EVENT: username="${username}", ip="${ip}", outcome="${outcome}"`);
-}
 
 // Helper to hash token using SHA-256
 function hashToken(token: string): string {
@@ -66,7 +62,17 @@ router.post('/login', async (req: Request, res: Response): Promise<void> => {
   const attempt = failedAttempts.get(rateLimitKey);
   const now = Date.now();
   if (attempt && attempt.lockoutUntil && attempt.lockoutUntil > now) {
-    logAuthEvent(username, ip, 'LOCKED_OUT');
+    const userCheck = await pool.query('SELECT id FROM users WHERE username = $1', [username]);
+    const userId = userCheck.rows[0]?.id || null;
+    await logAudit({
+      userId,
+      username,
+      category: 'LOGIN',
+      action: 'LOGIN_LOCKED_OUT',
+      status: 'FAILURE',
+      ip,
+      details: { lockoutUntil: new Date(attempt.lockoutUntil).toISOString() }
+    });
     res.status(429).json({ error: 'Too many failed attempts, try again later' });
     return;
   }
@@ -101,7 +107,15 @@ router.post('/login', async (req: Request, res: Response): Promise<void> => {
           mfaSecret,
           { expiresIn: '2m' }
         );
-        logAuthEvent(username, ip, 'MFA_REQUIRED');
+        await logAudit({
+          userId: userRow.id,
+          username,
+          category: 'LOGIN',
+          action: 'MFA_CHALLENGE_ISSUED',
+          status: 'SUCCESS',
+          ip,
+          details: {}
+        });
         res.json({ mfaRequired: true, mfaToken });
         return;
       }
@@ -141,7 +155,15 @@ router.post('/login', async (req: Request, res: Response): Promise<void> => {
         maxAge: 7 * 24 * 60 * 60 * 1000 // 7 days
       });
 
-      logAuthEvent(userRow.username, ip, 'SUCCESS');
+      await logAudit({
+        userId: userRow.id,
+        username: userRow.username,
+        category: 'LOGIN',
+        action: 'LOGIN_SUCCESS',
+        status: 'SUCCESS',
+        ip,
+        details: { device: deviceLabel }
+      });
 
       res.json({
         accessToken,
@@ -171,7 +193,29 @@ router.post('/login', async (req: Request, res: Response): Promise<void> => {
         }, 15 * 60 * 1000);
       }
 
-      logAuthEvent(username, ip, 'FAILURE');
+      const userCheck = await pool.query('SELECT id FROM users WHERE username = $1', [username]);
+      const userId = userCheck.rows[0]?.id || null;
+
+      if (curAttempt.count >= 5 && userId) {
+        await createNotification({
+          category: 'SECURITY',
+          type: 'LOGIN_LOCKED_OUT',
+          targetUserId: userId,
+          title: 'Account Locked Out',
+          message: `Account for username "${username}" has been temporarily locked due to 5 consecutive login failures.`,
+          severity: 'WARNING'
+        });
+      }
+
+      await logAudit({
+        userId,
+        username,
+        category: 'LOGIN',
+        action: 'LOGIN_FAILURE',
+        status: 'FAILURE',
+        ip,
+        details: { attemptCount: curAttempt.count, lockedOut: curAttempt.count >= 5 }
+      });
 
       if (curAttempt.count >= 5) {
         res.status(429).json({ error: 'Too many failed attempts, try again later' });
@@ -181,6 +225,17 @@ router.post('/login', async (req: Request, res: Response): Promise<void> => {
     }
   } catch (error: any) {
     console.error('Database query error in login:', error);
+    const userCheck = await pool.query('SELECT id FROM users WHERE username = $1', [username]).catch(() => ({ rows: [] }));
+    const userId = userCheck.rows[0]?.id || null;
+    await logAudit({
+      userId,
+      username,
+      category: 'LOGIN',
+      action: 'LOGIN_FAILURE',
+      status: 'FAILURE',
+      ip,
+      details: { error: error.message }
+    });
     res.status(500).json({ error: 'An internal server error occurred during login.' });
   }
 });
@@ -271,6 +326,10 @@ router.post('/verify-otp', async (req: Request, res: Response): Promise<void> =>
   }
 
   try {
+    // Resolve user ID if exists
+    const userCheck = await pool.query('SELECT id FROM users WHERE username = $1', [username]);
+    const userId = userCheck.rows[0]?.id || null;
+
     // Look up the latest OTP row for this username
     const otpResult = await pool.query(
       `SELECT id, code, expires_at, used, attempt_count FROM password_reset_otps 
@@ -282,20 +341,44 @@ router.post('/verify-otp', async (req: Request, res: Response): Promise<void> =>
     const otpRow = otpResult.rows[0];
 
     if (!otpRow) {
-      logAuthEvent(username, ip, 'OTP_VERIFY_FAILED: no_otp_found');
+      await logAudit({
+        userId,
+        username,
+        category: 'LOGIN',
+        action: 'OTP_VERIFY_FAILED',
+        status: 'FAILURE',
+        ip,
+        details: { reason: 'no_otp_found' }
+      });
       res.status(400).json({ error: 'Invalid username or OTP code.' });
       return;
     }
 
     if (otpRow.used) {
-      logAuthEvent(username, ip, 'OTP_VERIFY_FAILED: otp_already_used');
+      await logAudit({
+        userId,
+        username,
+        category: 'LOGIN',
+        action: 'OTP_VERIFY_FAILED',
+        status: 'FAILURE',
+        ip,
+        details: { reason: 'otp_already_used' }
+      });
       res.status(400).json({ error: 'OTP code has already been used or locked. Please request a new code.' });
       return;
     }
 
     const isExpired = new Date(otpRow.expires_at).getTime() < Date.now();
     if (isExpired) {
-      logAuthEvent(username, ip, 'OTP_VERIFY_FAILED: otp_expired');
+      await logAudit({
+        userId,
+        username,
+        category: 'LOGIN',
+        action: 'OTP_VERIFY_FAILED',
+        status: 'FAILURE',
+        ip,
+        details: { reason: 'otp_expired' }
+      });
       res.status(400).json({ error: 'OTP code has expired. Please request a new code.' });
       return;
     }
@@ -303,7 +386,15 @@ router.post('/verify-otp', async (req: Request, res: Response): Promise<void> =>
     // Check attempt limit BEFORE checking code
     if (otpRow.attempt_count >= 5) {
       await pool.query('UPDATE password_reset_otps SET used = true WHERE id = $1', [otpRow.id]);
-      logAuthEvent(username, ip, 'OTP_VERIFY_FAILED: locked_out_pre_check');
+      await logAudit({
+        userId,
+        username,
+        category: 'LOGIN',
+        action: 'OTP_VERIFY_FAILED',
+        status: 'FAILURE',
+        ip,
+        details: { reason: 'locked_out_pre_check' }
+      });
       res.status(400).json({ error: 'Too many incorrect attempts. Please request a new code.' });
       return;
     }
@@ -343,7 +434,15 @@ router.post('/verify-otp', async (req: Request, res: Response): Promise<void> =>
           { expiresIn: '5m' } // Short-lived reset token
         );
 
-        logAuthEvent(username, ip, 'OTP_VERIFY_SUCCESS: password_reset_initiated');
+        await logAudit({
+          userId,
+          username,
+          category: 'LOGIN',
+          action: 'OTP_VERIFY_SUCCESS',
+          status: 'SUCCESS',
+          ip,
+          details: { type: 'password_reset_initiated' }
+        });
         res.json({ resetToken });
       } else {
         // Project Manager - log in directly
@@ -381,7 +480,15 @@ router.post('/verify-otp', async (req: Request, res: Response): Promise<void> =>
           maxAge: 7 * 24 * 60 * 60 * 1000 // 7 days
         });
 
-        logAuthEvent(username, ip, 'OTP_VERIFY_SUCCESS: otp_based_login');
+        await logAudit({
+          userId: userRow.id,
+          username,
+          category: 'LOGIN',
+          action: 'OTP_VERIFY_SUCCESS',
+          status: 'SUCCESS',
+          ip,
+          details: { type: 'otp_based_login', device: deviceLabel }
+        });
 
         res.json({
           accessToken,
@@ -395,7 +502,15 @@ router.post('/verify-otp', async (req: Request, res: Response): Promise<void> =>
       }
     } else {
       // Code is incorrect
-      logAuthEvent(username, ip, `OTP_VERIFY_FAILED: incorrect_code_attempt_${newAttemptCount}`);
+      await logAudit({
+        userId,
+        username,
+        category: 'LOGIN',
+        action: 'OTP_VERIFY_FAILED',
+        status: 'FAILURE',
+        ip,
+        details: { reason: 'incorrect_code', attempt: newAttemptCount }
+      });
 
       if (newAttemptCount >= 5) {
         // Lock out
@@ -450,7 +565,17 @@ router.post('/reset-password', async (req: Request, res: Response): Promise<void
       [decoded.username]
     );
 
-    logAuthEvent(decoded.username, ip, 'PASSWORD_RESET_SUCCESS');
+    const userCheck = await pool.query('SELECT id FROM users WHERE username = $1', [decoded.username]);
+    const userId = userCheck.rows[0]?.id || null;
+    await logAudit({
+      userId,
+      username: decoded.username,
+      category: 'LOGIN',
+      action: 'PASSWORD_RESET_SUCCESS',
+      status: 'SUCCESS',
+      ip,
+      details: {}
+    });
     res.json({ success: true, message: 'Password updated successfully. Please log in.' });
   } catch (err: any) {
     console.error('Reset password error:', err);
@@ -561,7 +686,15 @@ router.post('/2fa/verify', async (req: Request, res: Response): Promise<void> =>
         maxAge: 7 * 24 * 60 * 60 * 1000 // 7 days
       });
 
-      logAuthEvent(userRow.username, ip, 'MFA_SUCCESS');
+      await logAudit({
+        userId: userRow.id,
+        username: userRow.username,
+        category: 'LOGIN',
+        action: 'MFA_VERIFIED',
+        status: 'SUCCESS',
+        ip,
+        details: { device: deviceLabel }
+      });
 
       res.json({
         accessToken,
@@ -573,7 +706,15 @@ router.post('/2fa/verify', async (req: Request, res: Response): Promise<void> =>
         }
       });
     } else {
-      logAuthEvent(userRow.username, ip, 'MFA_FAILURE');
+      await logAudit({
+        userId: userRow.id,
+        username: userRow.username,
+        category: 'LOGIN',
+        action: 'MFA_FAILED',
+        status: 'FAILURE',
+        ip,
+        details: {}
+      });
       res.status(401).json({ error: 'Invalid MFA verification code' });
     }
   } catch (err: any) {
@@ -628,10 +769,20 @@ router.post('/refresh', async (req: Request, res: Response): Promise<void> => {
         );
         res.json({ accessToken });
         return;
-      } else {
         // Token reuse outside grace window - SECURITY ALERT
         await pool.query('UPDATE sessions SET revoked = TRUE WHERE id = $1', [session.id]);
-        logAuthEvent(session.username, ip as string, 'SECURITY: refresh token reuse detected outside grace window, session revoked');
+        await logAudit({
+          userId: session.user_id,
+          username: session.username,
+          category: 'LOGIN',
+          action: 'REFRESH_TOKEN_REUSE_DETECTED',
+          status: 'FAILURE',
+          ip: ip as string,
+          details: {
+            note: 'SECURITY: refresh token reuse detected outside grace window, session revoked',
+            sessionId: session.id
+          }
+        });
         res.status(401).json({ error: 'Session revoked due to token reuse' });
         return;
       }
@@ -684,16 +835,61 @@ router.post('/refresh', async (req: Request, res: Response): Promise<void> => {
 // POST /api/auth/logout
 router.post('/logout', async (req: Request, res: Response): Promise<void> => {
   const refreshToken = req.cookies.npms_refresh;
+  let username = 'unknown';
+  let userId: number | null = null;
+  const ip = req.ip || 'unknown';
+
   if (refreshToken) {
     try {
       const hashedToken = hashToken(refreshToken);
+      const sessionResult = await pool.query(
+        `SELECT s.user_id, u.username 
+         FROM sessions s
+         JOIN users u ON s.user_id = u.id
+         WHERE s.refresh_token_hash = $1`,
+        [hashedToken]
+      );
+      if (sessionResult.rows.length > 0) {
+        userId = sessionResult.rows[0].user_id;
+        username = sessionResult.rows[0].username;
+      }
+
       await pool.query(
         `UPDATE sessions SET revoked = TRUE WHERE refresh_token_hash = $1`,
         [hashedToken]
       );
-    } catch (err) {
+
+      await logAudit({
+        userId,
+        username,
+        category: 'LOGOUT',
+        action: 'LOGOUT_SUCCESS',
+        status: 'SUCCESS',
+        ip,
+        details: { method: 'cookie' }
+      });
+    } catch (err: any) {
       console.error('Error revoking session on logout:', err);
+      await logAudit({
+        userId,
+        username,
+        category: 'LOGOUT',
+        action: 'LOGOUT_FAILURE',
+        status: 'FAILURE',
+        ip,
+        details: { error: err.message }
+      });
     }
+  } else {
+    await logAudit({
+      userId: null,
+      username: 'unknown',
+      category: 'LOGOUT',
+      action: 'LOGOUT_SUCCESS',
+      status: 'SUCCESS',
+      ip,
+      details: { note: 'no refresh token cookie found' }
+    });
   }
 
   // Clear cookie
@@ -756,7 +952,7 @@ router.delete('/sessions/:id', requireAuth, async (req: AuthenticatedRequest, re
   try {
     // Must belong to requesting user
     const checkResult = await pool.query(
-      `SELECT id FROM sessions WHERE id = $1 AND user_id = $2`,
+      `SELECT id, device_label, ip_address FROM sessions WHERE id = $1 AND user_id = $2`,
       [sessionId, userId]
     );
 
@@ -765,14 +961,44 @@ router.delete('/sessions/:id', requireAuth, async (req: AuthenticatedRequest, re
       return;
     }
 
+    const sessionToRevoke = checkResult.rows[0];
+
     await pool.query(
       `UPDATE sessions SET revoked = TRUE WHERE id = $1`,
       [sessionId]
     );
 
+    await logAudit({
+      userId,
+      username: req.user?.username || 'unknown',
+      category: 'USER_ACTIVITY',
+      action: 'SESSION_REVOKED',
+      status: 'SUCCESS',
+      ip: req.ip || 'unknown',
+      details: { sessionId, device: sessionToRevoke.device_label, sessionIp: sessionToRevoke.ip_address }
+    });
+
+    await createNotification({
+      category: 'SECURITY',
+      type: 'SESSION_REVOKED',
+      targetUserId: userId,
+      title: 'Session Revoked',
+      message: `Active session on device "${sessionToRevoke.device_label || 'Unknown Device'}" was revoked.`,
+      severity: 'WARNING'
+    });
+
     res.json({ success: true });
   } catch (error: any) {
     console.error('Failed to revoke session:', error);
+    await logAudit({
+      userId,
+      username: req.user?.username || 'unknown',
+      category: 'USER_ACTIVITY',
+      action: 'SESSION_REVOKED',
+      status: 'FAILURE',
+      ip: req.ip || 'unknown',
+      details: { sessionId, error: error.message }
+    });
     res.status(500).json({ error: 'Internal server error' });
   }
 });
@@ -789,22 +1015,67 @@ router.delete('/sessions/others', requireAuth, async (req: AuthenticatedRequest,
 
   try {
     const currentHash = currentRefreshToken ? hashToken(currentRefreshToken) : null;
+    let revokedSessions: any[] = [];
 
     if (currentHash) {
+      const sessResult = await pool.query(
+        `SELECT id, device_label, ip_address FROM sessions WHERE user_id = $1 AND refresh_token_hash <> $2 AND revoked = FALSE`,
+        [userId, currentHash]
+      );
+      revokedSessions = sessResult.rows;
+
       await pool.query(
         `UPDATE sessions SET revoked = TRUE WHERE user_id = $1 AND refresh_token_hash <> $2`,
         [userId, currentHash]
       );
     } else {
+      const sessResult = await pool.query(
+        `SELECT id, device_label, ip_address FROM sessions WHERE user_id = $1 AND revoked = FALSE`,
+        [userId]
+      );
+      revokedSessions = sessResult.rows;
+
       await pool.query(
         `UPDATE sessions SET revoked = TRUE WHERE user_id = $1`,
         [userId]
       );
     }
 
+    await logAudit({
+      userId,
+      username: req.user?.username || 'unknown',
+      category: 'USER_ACTIVITY',
+      action: 'SESSION_REVOKED',
+      status: 'SUCCESS',
+      ip: req.ip || 'unknown',
+      details: {
+        target: 'others',
+        revokedCount: revokedSessions.length,
+        revokedSessions: revokedSessions.map(s => ({ id: s.id, device: s.device_label, ip: s.ip_address }))
+      }
+    });
+
+    await createNotification({
+      category: 'SECURITY',
+      type: 'SESSION_REVOKED',
+      targetUserId: userId,
+      title: 'Other Sessions Revoked',
+      message: `Revoked ${revokedSessions.length} other active session(s) on your account.`,
+      severity: 'WARNING'
+    });
+
     res.json({ success: true });
   } catch (error: any) {
     console.error('Failed to revoke other sessions:', error);
+    await logAudit({
+      userId,
+      username: req.user?.username || 'unknown',
+      category: 'USER_ACTIVITY',
+      action: 'SESSION_REVOKED',
+      status: 'FAILURE',
+      ip: req.ip || 'unknown',
+      details: { target: 'others', error: error.message }
+    });
     res.status(500).json({ error: 'Internal server error' });
   }
 });
@@ -876,6 +1147,15 @@ router.post('/2fa/confirm', requireAuth, async (req: AuthenticatedRequest, res: 
     });
 
     if (!verified.valid) {
+      await logAudit({
+        userId,
+        username: req.user?.username || 'unknown',
+        category: 'USER_ACTIVITY',
+        action: 'MFA_ENABLED',
+        status: 'FAILURE',
+        ip: req.ip || 'unknown',
+        details: { reason: 'invalid_code' }
+      });
       res.status(400).json({ error: 'Invalid code, please try again.' });
       return;
     }
@@ -899,9 +1179,37 @@ router.post('/2fa/confirm', requireAuth, async (req: AuthenticatedRequest, res: 
       [tempSecret, hashedBackupCodes, userId]
     );
 
+    await logAudit({
+      userId,
+      username: req.user?.username || 'unknown',
+      category: 'USER_ACTIVITY',
+      action: 'MFA_ENABLED',
+      status: 'SUCCESS',
+      ip: req.ip || 'unknown',
+      details: { method: 'totp' }
+    });
+
+    await createNotification({
+      category: 'SECURITY',
+      type: 'MFA_ENABLED',
+      targetUserId: userId,
+      title: 'MFA Enabled',
+      message: 'Multi-factor authentication has been enabled on your account.',
+      severity: 'INFO'
+    });
+
     res.json({ backupCodes });
   } catch (error: any) {
     console.error('Failed to confirm 2FA setup:', error);
+    await logAudit({
+      userId,
+      username: req.user?.username || 'unknown',
+      category: 'USER_ACTIVITY',
+      action: 'MFA_ENABLED',
+      status: 'FAILURE',
+      ip: req.ip || 'unknown',
+      details: { error: error.message }
+    });
     res.status(500).json({ error: 'Internal server error confirming 2FA' });
   }
 });
@@ -935,6 +1243,15 @@ router.post('/2fa/disable', requireAuth, async (req: AuthenticatedRequest, res: 
 
     const matches = await bcrypt.compare(password, userResult.rows[0].password_hash);
     if (!matches) {
+      await logAudit({
+        userId,
+        username: req.user?.username || 'unknown',
+        category: 'USER_ACTIVITY',
+        action: 'MFA_DISABLED',
+        status: 'FAILURE',
+        ip: req.ip || 'unknown',
+        details: { reason: 'invalid_password' }
+      });
       res.status(401).json({ error: 'Invalid password. Cannot disable 2FA.' });
       return;
     }
@@ -947,9 +1264,37 @@ router.post('/2fa/disable', requireAuth, async (req: AuthenticatedRequest, res: 
       [userId]
     );
 
+    await logAudit({
+      userId,
+      username: req.user?.username || 'unknown',
+      category: 'USER_ACTIVITY',
+      action: 'MFA_DISABLED',
+      status: 'SUCCESS',
+      ip: req.ip || 'unknown',
+      details: {}
+    });
+
+    await createNotification({
+      category: 'SECURITY',
+      type: 'MFA_DISABLED',
+      targetUserId: userId,
+      title: 'MFA Disabled',
+      message: 'Multi-factor authentication has been disabled on your account.',
+      severity: 'INFO'
+    });
+
     res.json({ success: true });
   } catch (error: any) {
     console.error('Failed to disable 2FA:', error);
+    await logAudit({
+      userId,
+      username: req.user?.username || 'unknown',
+      category: 'USER_ACTIVITY',
+      action: 'MFA_DISABLED',
+      status: 'FAILURE',
+      ip: req.ip || 'unknown',
+      details: { error: error.message }
+    });
     res.status(500).json({ error: 'Internal server error disabling 2FA' });
   }
 });
@@ -977,6 +1322,32 @@ router.get('/2fa/status', requireAuth, async (req: AuthenticatedRequest, res: Re
   } catch (error: any) {
     console.error('Failed to fetch 2FA status:', error);
     res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// GET /api/auth/users
+router.get('/users', requireAuth, async (req: AuthenticatedRequest, res: Response): Promise<void> => {
+  try {
+    if (req.user?.role !== 'superadmin') {
+      res.status(403).json({ error: 'Access denied. Super Admin role required.' });
+      return;
+    }
+    const query = `
+      SELECT 
+        u.id, 
+        u.username, 
+        u.role, 
+        u.email, 
+        pm.prj_mgr_name as "name"
+      FROM users u
+      LEFT JOIN project_managers pm ON u.prj_mgr_id = pm.prj_mgr_id
+      ORDER BY u.id ASC
+    `;
+    const result = await pool.query(query);
+    res.json(result.rows);
+  } catch (error: any) {
+    console.error('Failed to fetch users:', error);
+    res.status(500).json({ error: 'Failed to retrieve users.' });
   }
 });
 

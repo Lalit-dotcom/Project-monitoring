@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { useOutletContext, useNavigate, useSearchParams } from 'react-router-dom';
+import { useOutletContext, useNavigate, useSearchParams, Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { 
   Filter, 
@@ -10,18 +10,108 @@ import {
   ChevronRight,
   ChevronUp,
   ChevronDown,
-  MoreVertical,
   Search,
-  AlertTriangle
+  AlertTriangle,
+  FileText,
+  Receipt,
+  CreditCard,
+  FileSpreadsheet,
+  BarChart3,
+  Download,
+  Loader2
 } from 'lucide-react';
 import { api } from '../lib/api';
 import type { ProjectFilters } from '../lib/api';
 import type { Project, DatabaseProject } from '../types';
 import { Breadcrumbs } from '../components/Breadcrumbs';
 import { toast } from '../lib/toast';
+import { useCountUp } from '../hooks/useCountUp';
+
+/* ─── Compact Summary / KPI Card ─── */
+interface CompactStatCardProps {
+  label: string;
+  value: number;
+  bg: string;
+  labelColor: string;
+  numColor: string;
+  icon?: React.ReactNode;
+  loading?: boolean;
+  onClick?: (e: React.MouseEvent) => void;
+  onMouseEnter?: () => void;
+  onMouseLeave?: () => void;
+  onFocus?: () => void;
+  onBlur?: () => void;
+  tabIndex?: number;
+  children?: React.ReactNode;
+}
+
+const CompactStatCard: React.FC<CompactStatCardProps> = ({
+  label,
+  value,
+  bg,
+  labelColor,
+  numColor,
+  icon,
+  loading,
+  onClick,
+  onMouseEnter,
+  onMouseLeave,
+  onFocus,
+  onBlur,
+  tabIndex,
+  children,
+}) => {
+  const animatedValue = useCountUp(value);
+
+  if (loading) {
+    return (
+      <div
+        style={{ backgroundColor: bg }}
+        className="animate-pulse rounded-[12px] p-[12px] flex flex-col justify-between h-[88px] min-w-[160px] sm:min-w-[180px] flex-initial"
+      >
+        <div className="h-3.5 bg-black/10 rounded w-24"></div>
+        <div className="h-7 bg-black/15 rounded w-12"></div>
+      </div>
+    );
+  }
+
+  return (
+    <div
+      onClick={onClick}
+      onMouseEnter={onMouseEnter}
+      onMouseLeave={onMouseLeave}
+      onFocus={onFocus}
+      onBlur={onBlur}
+      tabIndex={tabIndex}
+      style={{ backgroundColor: bg }}
+      className={`rounded-[12px] p-[12px] flex flex-col justify-between relative select-none h-[88px] min-w-[160px] sm:min-w-[180px] flex-initial transition-all focus:outline-none focus:ring-2 focus:ring-primary/40 ${
+        onClick ? 'cursor-pointer' : ''
+      }`}
+    >
+      <div className="flex justify-between items-start">
+        <span
+          style={{ color: labelColor }}
+          className="font-headline text-[11px] font-semibold uppercase tracking-[0.04em] block mb-[10px] leading-tight"
+        >
+          {label}
+        </span>
+        {icon && <div style={{ color: labelColor }} className="shrink-0">{icon}</div>}
+      </div>
+
+      <div
+        style={{ color: numColor }}
+        className="font-headline text-[26px] font-medium leading-none"
+      >
+        {animatedValue}
+      </div>
+
+      {children}
+    </div>
+  );
+};
 
 export const Projects: React.FC = () => {
-  const { searchQuery } = useOutletContext<{ searchQuery: string }>();
+  const { searchQuery, projectsRefreshTrigger } = useOutletContext<{ searchQuery: string; projectsRefreshTrigger?: number }>();
   const navigate = useNavigate();
   const { user } = useAuth();
   
@@ -55,6 +145,19 @@ export const Projects: React.FC = () => {
   const [projects, setProjects] = useState<(Project & DatabaseProject)[]>([]);
   const [projectTypes, setProjectTypes] = useState<string[]>([]);
   const [projectManagers, setProjectManagers] = useState<{ prjMgrId: number; prjMgrName: string }[]>([]);
+  const [summary, setSummary] = useState<{
+    totalProjects: number;
+    totalManagers: number;
+    projectsAtRisk: number;
+    dueThisWeek: number;
+    incompleteProjects: number;
+    riskBreakdown: {
+      vendorOverpaid: number;
+      billingAhead: number;
+      stalled: number;
+    };
+  } | null>(null);
+  const [summaryLoading, setSummaryLoading] = useState(true);
   
   const [loading, setLoading] = useState(true);
   const [refetching, setRefetching] = useState(false);
@@ -65,6 +168,46 @@ export const Projects: React.FC = () => {
   // Popover Toggles
   const [showFilterPopover, setShowFilterPopover] = useState(false);
   const [showSortPopover, setShowSortPopover] = useState(false);
+  const [showExportPopover, setShowExportPopover] = useState(false);
+  const [isExporting, setIsExporting] = useState(false);
+
+  const exportDropdownRef = useRef<HTMLDivElement>(null);
+  const exportButtonRef = useRef<HTMLButtonElement>(null);
+
+  const handleExport = async (format: 'excel' | 'pdf') => {
+    setShowExportPopover(false);
+    setIsExporting(true);
+    try {
+      const apiFilters: ProjectFilters = {
+        search,
+        prjMgrId: prjMgrId === 'All' ? undefined : prjMgrId,
+        paymentStatus: paymentStatus === 'All' ? undefined : (paymentStatus === 'Fully Paid' ? 'fully_paid' : paymentStatus === 'Partially Paid' ? 'partially_paid' : 'no_invoices'),
+        projectType: projectType === 'All' ? undefined : projectType,
+        sortBy,
+        sortOrder,
+        amountField,
+        minAmount,
+        maxAmount,
+        dateFrom,
+        dateTo,
+        noPoYet: noPoYet ? true : undefined,
+        taxInvoiceOutstanding: taxInvoiceOutstanding ? true : undefined,
+        riskVendorOverpaid: riskVendorOverpaid ? true : undefined,
+        riskBillingAhead: riskBillingAhead ? true : undefined,
+        riskStalled: riskStalled ? true : undefined
+      };
+      await api.exportProjectsFile(apiFilters, format);
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setIsExporting(false);
+    }
+  };
+
+  // Risk Hover and Touch states
+  const [isRiskHovered, setIsRiskHovered] = useState(false);
+  const [showMobileRiskOverlay, setShowMobileRiskOverlay] = useState(false);
+  const isRiskOverlayVisible = isRiskHovered || showMobileRiskOverlay;
 
   // Filter Refs
   const filterDropdownRef = useRef<HTMLDivElement>(null);
@@ -118,6 +261,35 @@ export const Projects: React.FC = () => {
     };
   }, [showFilterPopover]);
 
+  // Close export popover on click outside or Escape key press
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (
+        showExportPopover &&
+        exportDropdownRef.current &&
+        !exportDropdownRef.current.contains(event.target as Node) &&
+        exportButtonRef.current &&
+        !exportButtonRef.current.contains(event.target as Node)
+      ) {
+        setShowExportPopover(false);
+      }
+    };
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape' && showExportPopover) {
+        setShowExportPopover(false);
+      }
+    };
+
+    document.addEventListener('mousedown', handleClickOutside);
+    document.addEventListener('keydown', handleKeyDown);
+
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+      document.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [showExportPopover]);
+
   // Load distinct filters on mount
   useEffect(() => {
     const loadDistinctData = async () => {
@@ -134,6 +306,22 @@ export const Projects: React.FC = () => {
     };
     loadDistinctData();
   }, []);
+
+  // Load summary metrics on mount
+  useEffect(() => {
+    const loadSummaryData = async () => {
+      try {
+        setSummaryLoading(true);
+        const data = await api.getProjectsSummary();
+        setSummary(data);
+      } catch (err) {
+        console.error('Failed to load project summary metrics:', err);
+      } finally {
+        setSummaryLoading(false);
+      }
+    };
+    loadSummaryData();
+  }, [projectsRefreshTrigger]);
 
   // Sync search query from global topbar input
   useEffect(() => {
@@ -218,7 +406,7 @@ export const Projects: React.FC = () => {
       }
     };
     fetchProjects();
-  }, [search, prjMgrId, paymentStatus, projectType, sortBy, sortOrder, amountField, minAmount, maxAmount, dateFrom, dateTo, noPoYet, taxInvoiceOutstanding, riskVendorOverpaid, riskBillingAhead, riskStalled, page, pageSize]);
+  }, [search, prjMgrId, paymentStatus, projectType, sortBy, sortOrder, amountField, minAmount, maxAmount, dateFrom, dateTo, noPoYet, taxInvoiceOutstanding, riskVendorOverpaid, riskBillingAhead, riskStalled, page, pageSize, projectsRefreshTrigger]);
 
   // Helper to synchronize URL parameters
   const updateFilters = (updates: Record<string, any>) => {
@@ -360,19 +548,9 @@ export const Projects: React.FC = () => {
     }
   };
 
-  // Click handler checking if invoices exist
-  const handleRowClick = async (projectCd: string, prjNm: string) => {
-    try {
-      const exists = await api.checkInvoicesExist(projectCd);
-      if (exists) {
-        navigate(`/invoices?projectNo=${encodeURIComponent(projectCd)}`);
-      } else {
-        toast.info(`No invoices exist for ${prjNm || projectCd} yet`);
-      }
-    } catch (err) {
-      console.error('Error checking invoice existence:', err);
-      toast.error("Failed to check if invoices exist");
-    }
+  // Click handler to navigate to project detail page
+  const handleRowClick = (projectCd: string, _prjNm?: string) => {
+    navigate(`/projects/${projectCd}`);
   };
 
   // Derive PM initials for avatar chip
@@ -472,6 +650,61 @@ export const Projects: React.FC = () => {
     });
   }
 
+  // Check if any risk filters are currently applied
+  const isRiskFiltered = riskVendorOverpaid || riskBillingAhead || riskStalled;
+
+  // Toggle risk filters when Projects at Risk card is clicked
+  const handleRiskCardClick = () => {
+    if (isRiskFiltered) {
+      updateFilters({
+        riskVendorOverpaid: undefined,
+        riskBillingAhead: undefined,
+        riskStalled: undefined,
+        page: 1
+      });
+    } else {
+      updateFilters({
+        riskVendorOverpaid: 'true',
+        riskBillingAhead: 'true',
+        riskStalled: 'true',
+        page: 1
+      });
+    }
+  };
+
+  const handleRiskMouseEnter = () => {
+    if (typeof window !== 'undefined' && window.matchMedia('(hover: hover)').matches) {
+      setIsRiskHovered(true);
+    }
+  };
+
+  const handleRiskMouseLeave = () => {
+    setIsRiskHovered(false);
+  };
+
+  const handleRiskFocus = () => {
+    setIsRiskHovered(true);
+  };
+
+  const handleRiskBlur = () => {
+    setIsRiskHovered(false);
+    setShowMobileRiskOverlay(false);
+  };
+
+  const handleRiskCardTap = () => {
+    if (typeof window !== 'undefined' && window.matchMedia('(hover: hover)').matches) {
+      handleRiskCardClick();
+      return;
+    }
+
+    // Touch device toggle behavior
+    if (!showMobileRiskOverlay) {
+      setShowMobileRiskOverlay(true);
+    } else {
+      handleRiskCardClick();
+    }
+  };
+
   // Pagination parameters
   const totalCount = (projects as any).totalCount || 0;
   const totalPages = Math.ceil(totalCount / pageSize) || 1;
@@ -541,6 +774,206 @@ export const Projects: React.FC = () => {
         </div>
       </div>
 
+      {/* Redesigned Scorecard & Controls Row */}
+      <div className="flex flex-col lg:flex-row gap-4 items-stretch">
+        {/* Summary / KPI Cards Flex Row */}
+        <div className="flex flex-wrap gap-4 flex-1 items-stretch">
+          <CompactStatCard 
+            label="Total Projects"
+            value={summary?.totalProjects ?? 0}
+            bg="#B5D4F4"
+            labelColor="#0C447C"
+            numColor="#042C53"
+            loading={summaryLoading}
+          />
+          
+          <CompactStatCard 
+            label="Projects at Risk"
+            value={summary?.projectsAtRisk ?? 0}
+            bg="#F09595"
+            labelColor="#791F1F"
+            numColor="#501313"
+            icon={<AlertTriangle className="w-4 h-4" />}
+            onClick={handleRiskCardTap}
+            onMouseEnter={handleRiskMouseEnter}
+            onMouseLeave={handleRiskMouseLeave}
+            onFocus={handleRiskFocus}
+            onBlur={handleRiskBlur}
+            tabIndex={0}
+            loading={summaryLoading}
+          >
+            {/* Floating Tooltip */}
+            <div
+              className={`absolute bottom-full left-1/2 -translate-x-1/2 mb-2.5 w-[200px] bg-surface border border-outline-variant rounded-lg shadow-lg p-3 z-50 text-left transition-all duration-150 ease-out origin-bottom ${
+                isRiskOverlayVisible
+                  ? 'opacity-100 scale-100 translate-y-0 visible pointer-events-auto'
+                  : 'opacity-0 scale-95 translate-y-1 invisible pointer-events-none'
+              }`}
+              onClick={(e) => {
+                e.stopPropagation();
+                handleRiskCardClick();
+              }}
+            >
+              <div className="flex-1 flex flex-col gap-1.5 text-xs font-sans">
+                <div className="flex justify-between items-center border-b border-outline-variant/60 pb-1 mb-1 font-semibold text-[10px] uppercase tracking-wider text-secondary leading-none">
+                  Risk Breakdown
+                </div>
+                <div className="flex justify-between items-center">
+                  <span className="text-secondary truncate pr-2">Vendor paid &gt; collected:</span>
+                  <span className="text-on-surface font-semibold shrink-0">{summary?.riskBreakdown.vendorOverpaid ?? 0}</span>
+                </div>
+                <div className="flex justify-between items-center">
+                  <span className="text-secondary truncate pr-2">Collection behind PO:</span>
+                  <span className="text-on-surface font-semibold shrink-0">{summary?.riskBreakdown.billingAhead ?? 0}</span>
+                </div>
+                <div className="flex justify-between items-center">
+                  <span className="text-secondary truncate pr-2">No billing 60+ days:</span>
+                  <span className="text-on-surface font-semibold shrink-0">{summary?.riskBreakdown.stalled ?? 0}</span>
+                </div>
+              </div>
+              {/* Downward pointer arrow */}
+              <div className="absolute top-full left-1/2 -translate-x-1/2 -translate-y-1 w-2.5 h-2.5 rotate-45 bg-surface border-r border-b border-outline-variant" />
+            </div>
+          </CompactStatCard>
+
+          <CompactStatCard 
+            label="Due This Week"
+            value={summary?.dueThisWeek ?? 0}
+            bg="#9FE1CB"
+            labelColor="#085041"
+            numColor="#04342C"
+            loading={summaryLoading}
+          />
+          
+          <CompactStatCard 
+            label="Incomplete Projects"
+            value={summary?.incompleteProjects ?? 0}
+            bg="#D3D1C7"
+            labelColor="#444441"
+            numColor="#2C2C2A"
+            loading={summaryLoading}
+          />
+        </div>
+
+        {/* Controls Column */}
+        <div className="flex flex-col gap-2 w-full lg:w-[110px] shrink-0 justify-start">
+          {/* Popover 1: Filter Toggle Button */}
+          <button 
+            ref={filterButtonRef}
+            onClick={() => { setShowFilterPopover(!showFilterPopover); setShowSortPopover(false); }}
+            className={`h-10 w-full px-4 py-2 border rounded-full font-sans text-xs font-bold flex items-center justify-center gap-2 transition-all shadow-sm ${
+              activeChips.length > 0 
+                ? 'border-primary text-primary bg-primary/5 hover:bg-primary/10'
+                : 'border-outline-variant hover:border-outline text-secondary bg-white'
+            }`}
+          >
+            <Filter className="w-4 h-4" />
+            <span>Filters</span>
+            {activeChips.length > 0 && (
+              <span className="flex items-center justify-center bg-primary text-white text-[10px] font-bold rounded-full w-5 h-5 animate-fade-in-up">
+                {activeChips.length}
+              </span>
+            )}
+          </button>
+
+          {/* Popover 2: Sort */}
+          <div className="relative w-full">
+            <button 
+              onClick={() => { setShowSortPopover(!showSortPopover); setShowFilterPopover(false); }}
+              className="h-10 w-full px-4 py-2 border border-outline-variant hover:border-outline text-secondary hover:bg-surface-container-low rounded-full font-sans text-xs font-bold flex items-center justify-center gap-2 transition-all bg-white shadow-sm"
+            >
+              <span>Sort</span>
+            </button>
+            
+            {showSortPopover && (
+              <div className="absolute right-0 mt-2 w-64 bg-surface border border-outline-variant rounded-xl shadow-lg p-5 z-50 text-left font-sans space-y-4">
+                <div className="flex justify-between items-center pb-2 border-b border-outline-variant">
+                  <span className="font-bold text-sm text-on-surface">Sort By</span>
+                  <button onClick={() => setShowSortPopover(false)} className="text-secondary hover:text-on-surface focus:outline-none">
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
+                
+                {/* Sort Field */}
+                <div className="space-y-1">
+                  <label className="text-[10px] font-bold text-secondary uppercase tracking-wider block">Field</label>
+                  <select
+                    value={localSortBy}
+                    onChange={(e) => setLocalSortBy(e.target.value)}
+                    className="h-9 w-full rounded border border-outline-variant bg-surface-container-lowest text-xs px-2 outline-none cursor-pointer"
+                  >
+                    <option value="created_on">Created Date</option>
+                    <option value="po_amount">PO Amount</option>
+                    <option value="amount_received">Amount Received</option>
+                    <option value="total_amount_paid">Total Amount Paid</option>
+                  </select>
+                </div>
+
+                {/* Sort Order */}
+                <div className="space-y-1">
+                  <label className="text-[10px] font-bold text-secondary uppercase tracking-wider block">Order</label>
+                  <select
+                    value={localSortOrder}
+                    onChange={(e) => setLocalSortOrder(e.target.value)}
+                    className="h-9 w-full rounded border border-outline-variant bg-surface-container-lowest text-xs px-2 outline-none cursor-pointer"
+                  >
+                    <option value="desc">Descending</option>
+                    <option value="asc">Ascending</option>
+                  </select>
+                </div>
+
+                {/* Popover actions */}
+                <div className="flex items-center justify-end gap-3 pt-3 border-t border-outline-variant">
+                  <button 
+                    onClick={handleApplySort}
+                    className="px-3 py-1.5 bg-[#111827] hover:bg-[#1f2937] text-white rounded-lg text-xs font-bold shadow-sm transition-colors w-full"
+                  >
+                    Apply Sort
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Popover 3: Download */}
+          <div className="relative w-full">
+            <button 
+              ref={exportButtonRef}
+              onClick={() => { setShowExportPopover(!showExportPopover); setShowFilterPopover(false); setShowSortPopover(false); }}
+              disabled={isExporting}
+              className="h-10 w-full px-4 py-2 border border-outline-variant hover:border-outline text-secondary hover:bg-surface-container-low rounded-full font-sans text-xs font-bold flex items-center justify-center gap-2 transition-all bg-white shadow-sm"
+            >
+              {isExporting ? (
+                <Loader2 className="w-4 h-4 animate-spin text-secondary" />
+              ) : (
+                <Download className="w-4 h-4 text-secondary" />
+              )}
+              <span>Download</span>
+            </button>
+            
+            {showExportPopover && (
+              <div 
+                ref={exportDropdownRef}
+                className="absolute right-0 mt-2 w-48 bg-surface border border-outline-variant rounded-md shadow-lg z-50 py-1"
+              >
+                <button
+                  onClick={() => handleExport('excel')}
+                  className="w-full text-left px-4 py-2 text-xs font-medium text-on-surface hover:bg-surface-container-low transition-colors"
+                >
+                  Download as Excel
+                </button>
+                <button
+                  onClick={() => handleExport('pdf')}
+                  className="w-full text-left px-4 py-2 text-xs font-medium text-on-surface hover:bg-surface-container-low transition-colors"
+                >
+                  Download as PDF
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+
       {/* ACTIVE FILTER CHIPS */}
       {activeChips.length > 0 && (
         <div className="flex flex-wrap items-center gap-2 bg-surface-container-low/40 p-2.5 rounded-lg border border-outline-variant/60 font-sans text-xs">
@@ -567,87 +1000,6 @@ export const Projects: React.FC = () => {
           </button>
         </div>
       )}
-
-      {/* FILTER & TABS BAR ROW */}
-      <div className="flex items-center justify-end gap-3 pb-4 border-b border-outline-variant/60">
-        {/* Popover 1: Filter Toggle Button */}
-        <button 
-          ref={filterButtonRef}
-          onClick={() => { setShowFilterPopover(!showFilterPopover); setShowSortPopover(false); }}
-          className={`h-10 px-4 py-2 border rounded-full font-sans text-xs font-bold flex items-center gap-2 transition-all shadow-sm ${
-            activeChips.length > 0 
-              ? 'border-primary text-primary bg-primary/5 hover:bg-primary/10'
-              : 'border-outline-variant hover:border-outline text-secondary bg-white'
-          }`}
-        >
-          <Filter className="w-4 h-4" />
-          <span>Filters</span>
-          {activeChips.length > 0 && (
-            <span className="flex items-center justify-center bg-primary text-white text-[10px] font-bold rounded-full w-5 h-5 ml-1 animate-fade-in-up">
-              {activeChips.length}
-            </span>
-          )}
-        </button>
-
-        {/* Popover 2: Sort */}
-        <div className="relative">
-          <button 
-            onClick={() => { setShowSortPopover(!showSortPopover); setShowFilterPopover(false); }}
-            className="h-10 px-4 py-2 border border-outline-variant hover:border-outline text-secondary hover:bg-surface-container-low rounded-full font-sans text-xs font-bold flex items-center gap-2 transition-all bg-white shadow-sm"
-          >
-            <span>Sort</span>
-          </button>
-          
-          {showSortPopover && (
-            <div className="absolute right-0 mt-2 w-64 bg-surface border border-outline-variant rounded-xl shadow-lg p-5 z-50 text-left font-sans space-y-4">
-              <div className="flex justify-between items-center pb-2 border-b border-outline-variant">
-                <span className="font-bold text-sm text-on-surface">Sort By</span>
-                <button onClick={() => setShowSortPopover(false)} className="text-secondary hover:text-on-surface focus:outline-none">
-                  <X className="w-4 h-4" />
-                </button>
-              </div>
-              
-              {/* Sort Field */}
-              <div className="space-y-1">
-                <label className="text-[10px] font-bold text-secondary uppercase tracking-wider block">Field</label>
-                <select
-                  value={localSortBy}
-                  onChange={(e) => setLocalSortBy(e.target.value)}
-                  className="h-9 w-full rounded border border-outline-variant bg-surface-container-lowest text-xs px-2 outline-none cursor-pointer"
-                >
-                  <option value="created_on">Created Date</option>
-                  <option value="po_amount">PO Amount</option>
-                  <option value="amount_received">Amount Received</option>
-                  <option value="total_amount_paid">Total Amount Paid</option>
-                </select>
-              </div>
-
-              {/* Sort Order */}
-              <div className="space-y-1">
-                <label className="text-[10px] font-bold text-secondary uppercase tracking-wider block">Order</label>
-                <select
-                  value={localSortOrder}
-                  onChange={(e) => setLocalSortOrder(e.target.value)}
-                  className="h-9 w-full rounded border border-outline-variant bg-surface-container-lowest text-xs px-2 outline-none cursor-pointer"
-                >
-                  <option value="desc">Descending</option>
-                  <option value="asc">Ascending</option>
-                </select>
-              </div>
-
-              {/* Popover actions */}
-              <div className="flex items-center justify-end gap-3 pt-3 border-t border-outline-variant">
-                <button 
-                  onClick={handleApplySort}
-                  className="px-3 py-1.5 bg-[#111827] hover:bg-[#1f2937] text-white rounded-lg text-xs font-bold shadow-sm transition-colors w-full"
-                >
-                  Apply Sort
-                </button>
-              </div>
-            </div>
-          )}
-        </div>
-      </div>
 
       {/* FILTER PANEL (Block-level, pushes content down, full width, all filters at once) */}
       {showFilterPopover && (
@@ -886,6 +1238,45 @@ export const Projects: React.FC = () => {
         </div>
       )}
 
+      {/* Navigation Shortcut Buttons */}
+      <div className="flex flex-wrap items-center gap-3 pt-2 pb-4">
+        <Link 
+          to="/purchase-orders" 
+          className="h-10 px-4 py-2 border border-outline-variant hover:border-outline text-secondary hover:bg-surface-container-low rounded-full font-sans text-xs font-bold flex items-center gap-2 transition-all bg-white shadow-sm"
+        >
+          <FileText className="w-4 h-4 shrink-0 text-secondary" />
+          <span>Purchase Orders</span>
+        </Link>
+        <Link 
+          to="/invoices" 
+          className="h-10 px-4 py-2 border border-outline-variant hover:border-outline text-secondary hover:bg-surface-container-low rounded-full font-sans text-xs font-bold flex items-center gap-2 transition-all bg-white shadow-sm"
+        >
+          <Receipt className="w-4 h-4 shrink-0 text-secondary" />
+          <span>Invoices</span>
+        </Link>
+        <Link 
+          to="/bill-desk" 
+          className="h-10 px-4 py-2 border border-outline-variant hover:border-outline text-secondary hover:bg-surface-container-low rounded-full font-sans text-xs font-bold flex items-center gap-2 transition-all bg-white shadow-sm"
+        >
+          <CreditCard className="w-4 h-4 shrink-0 text-secondary" />
+          <span>Bill Desk</span>
+        </Link>
+        <Link 
+          to="/tax-invoices" 
+          className="h-10 px-4 py-2 border border-outline-variant hover:border-outline text-secondary hover:bg-surface-container-low rounded-full font-sans text-xs font-bold flex items-center gap-2 transition-all bg-white shadow-sm"
+        >
+          <FileSpreadsheet className="w-4 h-4 shrink-0 text-secondary" />
+          <span>Tax Invoices</span>
+        </Link>
+        <Link 
+          to="/reports" 
+          className="h-10 px-4 py-2 border border-outline-variant hover:border-outline text-secondary hover:bg-surface-container-low rounded-full font-sans text-xs font-bold flex items-center gap-2 transition-all bg-white shadow-sm"
+        >
+          <BarChart3 className="w-4 h-4 shrink-0 text-secondary" />
+          <span>Reports</span>
+        </Link>
+      </div>
+
       {/* RENDER VIEW SWITCHER (Card grid vs Full Table view) */}
       <div className={`relative transition-opacity duration-200 ${refetching ? 'opacity-60' : 'opacity-100'}`}>
         {projects.length === 0 ? (
@@ -902,7 +1293,7 @@ export const Projects: React.FC = () => {
           /* Pinned/Sticky Table View */
           <div className="bg-surface border border-outline-variant rounded-xl shadow-sm overflow-hidden flex flex-col">
             <div className="overflow-auto max-h-[calc(100vh-280px)] w-full">
-              <table className="w-full text-left border-collapse min-w-[2800px] table-sticky-header font-sans">
+              <table className="w-full text-left border-collapse min-w-[1800px] table-sticky-header font-sans">
                 <thead>
                   <tr className="bg-surface-container-low border-b border-outline-variant">
                     {/* Pinned/Sticky First Column: Project Code */}
@@ -910,19 +1301,13 @@ export const Projects: React.FC = () => {
                       Project Code
                     </th>
                     <th className="px-6 py-4 font-headline text-xs font-bold text-secondary uppercase tracking-wider">
-                      Project Name
-                    </th>
-                    <th className="px-6 py-4 font-headline text-xs font-bold text-secondary uppercase tracking-wider">
-                      PM Name
-                    </th>
-                    <th className="px-6 py-4 font-headline text-xs font-bold text-secondary uppercase tracking-wider">
                       Customer Name
                     </th>
-                    <th className="px-6 py-4 font-headline text-xs font-bold text-secondary uppercase tracking-wider">
-                      Payment Status
+                    <th className="px-6 py-4 font-headline text-xs font-bold text-secondary uppercase tracking-wider text-right">
+                      Budget Number
                     </th>
                     <th className="px-6 py-4 font-headline text-xs font-bold text-secondary uppercase tracking-wider text-right">
-                      No. of PO
+                      Project ABP
                     </th>
                     <th 
                       onClick={() => handleSort('po_amount')}
@@ -942,8 +1327,19 @@ export const Projects: React.FC = () => {
                         {sortBy === 'amount_received' ? (sortOrder === 'asc' ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />) : <ChevronDown className="w-4 h-4 opacity-25" />}
                       </div>
                     </th>
+                    <th className="px-6 py-4 font-headline text-xs font-bold text-secondary uppercase tracking-wider">
+                      Payment Status
+                    </th>
+                    {user?.role === 'superadmin' && (
+                      <th className="px-6 py-4 font-headline text-xs font-bold text-secondary uppercase tracking-wider">
+                        PM Name
+                      </th>
+                    )}
                     <th className="px-6 py-4 font-headline text-xs font-bold text-secondary uppercase tracking-wider text-right">
-                      No. of Invoices (Bill Desk)
+                      Number of PO
+                    </th>
+                    <th className="px-6 py-4 font-headline text-xs font-bold text-secondary uppercase tracking-wider text-right">
+                      Number of Invoices
                     </th>
                     <th className="px-6 py-4 font-headline text-xs font-bold text-secondary uppercase tracking-wider text-right">
                       Total Invoice Amount
@@ -958,16 +1354,10 @@ export const Projects: React.FC = () => {
                       </div>
                     </th>
                     <th className="px-6 py-4 font-headline text-xs font-bold text-secondary uppercase tracking-wider text-right">
-                      No. of Tax Invoices
+                      Number of Tax Invoice
                     </th>
                     <th className="px-6 py-4 font-headline text-xs font-bold text-secondary uppercase tracking-wider text-right">
                       Total Tax Invoice Amount
-                    </th>
-                    <th className="px-6 py-4 font-headline text-xs font-bold text-secondary uppercase tracking-wider text-right">
-                      Budget Number
-                    </th>
-                    <th className="px-6 py-4 font-headline text-xs font-bold text-secondary uppercase tracking-wider text-right">
-                      Project ABP
                     </th>
                     <th 
                       onClick={() => handleSort('created_on')}
@@ -977,30 +1367,6 @@ export const Projects: React.FC = () => {
                         <span>Created Date</span>
                         {sortBy === 'created_on' ? (sortOrder === 'asc' ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />) : <ChevronDown className="w-4 h-4 opacity-25" />}
                       </div>
-                    </th>
-                    <th className="px-6 py-4 font-headline text-xs font-bold text-secondary uppercase tracking-wider text-right">
-                      Customer ID
-                    </th>
-                    <th className="px-6 py-4 font-headline text-xs font-bold text-secondary uppercase tracking-wider">
-                      Project Type
-                    </th>
-                    <th className="px-6 py-4 font-headline text-xs font-bold text-secondary uppercase tracking-wider">
-                      User Email
-                    </th>
-                    <th className="px-6 py-4 font-headline text-xs font-bold text-secondary uppercase tracking-wider">
-                      Mobile Number
-                    </th>
-                    <th className="px-6 py-4 font-headline text-xs font-bold text-secondary uppercase tracking-wider">
-                      HOD Email
-                    </th>
-                    <th className="px-6 py-4 font-headline text-xs font-bold text-secondary uppercase tracking-wider">
-                      NIC Coordinator Email
-                    </th>
-                    <th className="px-6 py-4 font-headline text-xs font-bold text-secondary uppercase tracking-wider">
-                      Staff Email
-                    </th>
-                    <th className="px-6 py-4 font-headline text-xs font-bold text-secondary uppercase tracking-wider w-10">
-                      Actions
                     </th>
                   </tr>
                 </thead>
@@ -1018,23 +1384,25 @@ export const Projects: React.FC = () => {
                       {/* Pinned/Sticky First Column: Project Code */}
                       <td className="sticky left-0 bg-surface border-r border-outline-variant/60 z-10 shadow-[2px_0_5px_rgba(0,0,0,0.03)] px-6 py-5 group-hover:bg-surface-container-low transition-colors">
                         <span 
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            navigate(`/projects/${p.projectCd}`);
-                          }}
                           className="font-bold text-primary group-hover:underline hover:text-primary-container"
                         >
                           {p.projectCd}
                         </span>
                       </td>
-                      <td className="px-6 py-5 font-semibold text-sm leading-tight text-on-surface">
-                        {renderTruncatedText(p.prjNm, "max-w-[200px]")}
-                      </td>
-                      <td className="px-6 py-5 text-sm text-on-surface whitespace-nowrap">
-                        {renderFallback(p.prjMgrName)}
-                      </td>
                       <td className="px-6 py-5 text-sm text-on-surface">
                         {renderTruncatedText(p.customerName, "max-w-[200px]")}
+                      </td>
+                      <td className="px-6 py-5 text-right font-mono text-sm text-secondary">
+                        {renderFallback(p.prjBudgetNo)}
+                      </td>
+                      <td className="px-6 py-5 text-right font-mono text-sm text-secondary">
+                        {renderFallback(p.projectAbp)}
+                      </td>
+                      <td className="px-6 py-5 text-right font-semibold text-sm text-on-surface">
+                        {formatFullINR(p.poAmount)}
+                      </td>
+                      <td className="px-6 py-5 text-right text-sm text-on-surface font-semibold">
+                        {formatFullINR(p.amountReceived)}
                       </td>
                       <td className="px-6 py-5">
                         <span className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-bold border ${
@@ -1050,14 +1418,13 @@ export const Projects: React.FC = () => {
                           {p.paymentStatus}
                         </span>
                       </td>
+                      {user?.role === 'superadmin' && (
+                        <td className="px-6 py-5 text-sm text-on-surface whitespace-nowrap">
+                          {renderFallback(p.prjMgrName)}
+                        </td>
+                      )}
                       <td className="px-6 py-5 text-right font-semibold text-sm text-on-surface">
                         {p.noOfPo}
-                      </td>
-                      <td className="px-6 py-5 text-right font-semibold text-sm text-on-surface">
-                        {formatFullINR(p.poAmount)}
-                      </td>
-                      <td className="px-6 py-5 text-right text-sm text-on-surface font-semibold">
-                        {formatFullINR(p.amountReceived)}
                       </td>
                       <td className="px-6 py-5 text-right text-sm text-on-surface">
                         {p.noOfInvBilldesk}
@@ -1080,44 +1447,8 @@ export const Projects: React.FC = () => {
                       <td className="px-6 py-5 text-right text-sm text-on-surface">
                         {formatFullINR(p.totalTaxInvoiceAmount)}
                       </td>
-                      <td className="px-6 py-5 text-right font-mono text-sm text-secondary">
-                        {renderFallback(p.prjBudgetNo)}
-                      </td>
-                      <td className="px-6 py-5 text-right font-mono text-sm text-secondary">
-                        {renderFallback(p.projectAbp)}
-                      </td>
                       <td className="px-6 py-5 text-sm text-secondary whitespace-nowrap">
                         {formatDateString(p.createdOn)}
-                      </td>
-                      <td className="px-6 py-5 text-right font-mono text-sm text-secondary">
-                        {renderFallback(p.custId)}
-                      </td>
-                      <td className="px-6 py-5 text-sm text-secondary">
-                        {renderFallback(p.prjType)}
-                      </td>
-                      <td className="px-6 py-5 text-sm text-secondary">
-                        {renderTruncatedText(p.userEmail, "max-w-[180px]")}
-                      </td>
-                      <td className="px-6 py-5 text-sm text-secondary whitespace-nowrap">
-                        {renderTruncatedText(p.mobileNumber, "max-w-[120px]")}
-                      </td>
-                      <td className="px-6 py-5 text-sm text-secondary">
-                        {renderTruncatedText(p.hodEmail, "max-w-[180px]")}
-                      </td>
-                      <td className="px-6 py-5 text-sm text-secondary">
-                        {renderTruncatedText(p.nicCordEmailId, "max-w-[180px]")}
-                      </td>
-                      <td className="px-6 py-5 text-sm text-secondary">
-                        {renderTruncatedText(p.staffEmailId, "max-w-[180px]")}
-                      </td>
-                      <td className="px-6 py-5" onClick={(e) => e.stopPropagation()}>
-                        <button 
-                          onClick={() => navigate(`/projects/${p.projectCd}`)}
-                          className="p-1 hover:bg-surface-container rounded-md text-secondary hover:text-primary transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
-                          aria-label={`Open details for ${p.projectCd}`}
-                        >
-                          <MoreVertical className="w-5 h-5" aria-hidden="true" />
-                        </button>
                       </td>
                     </tr>
                   ))}
@@ -1179,16 +1510,12 @@ export const Projects: React.FC = () => {
                   key={p.projectCd}
                   onClick={() => handleRowClick(p.projectCd, p.prjNm)}
                   className="bg-surface rounded-xl p-5 shadow-sm relative transition-all duration-200 hover:shadow-md cursor-pointer border border-outline-variant hover:border-primary flex flex-col justify-between h-[210px]"
-                  title="Click to view linked Invoices, or use details link"
+                  title="Click to view project details"
                 >
                   <div>
                     {/* Top Row: Code and Payment Status Badge */}
                     <div className="flex justify-between items-start gap-2">
                       <span 
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          navigate(`/projects/${p.projectCd}`);
-                        }}
                         className="font-mono text-[10px] font-bold text-secondary uppercase bg-surface-container-low px-2 py-0.5 rounded border border-outline-variant/60 hover:text-primary transition-colors"
                       >
                         {p.projectCd}

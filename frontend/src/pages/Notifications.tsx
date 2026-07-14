@@ -1,18 +1,20 @@
 import React, { useState, useEffect } from 'react';
 import { useOutletContext } from 'react-router-dom';
-import { Bell, Check, CheckCheck, AlertTriangle, Info, Trash2 } from 'lucide-react';
+import { Bell, Check, CheckCheck, AlertTriangle, Info } from 'lucide-react';
 import { api } from '../lib/api';
 import type { Notification } from '../types';
 
 export const Notifications: React.FC = () => {
   const { reloadNotifications } = useOutletContext<{ reloadNotifications: () => void }>();
   const [notifications, setNotifications] = useState<Notification[]>([]);
+  const [unreadCount, setUnreadCount] = useState(0);
   const [loading, setLoading] = useState(true);
 
   const loadNotifications = async () => {
     try {
-      const data = await api.getNotifications();
-      setNotifications(data);
+      const result = await api.getNotifications({ pageSize: 100 });
+      setNotifications(result.data);
+      setUnreadCount(result.unreadCount);
     } catch (err) {
       console.error(err);
     } finally {
@@ -44,17 +46,26 @@ export const Notifications: React.FC = () => {
     }
   };
 
-  const handleClearNotifications = () => {
-    localStorage.setItem('npms_notifications', JSON.stringify([]));
-    loadNotifications();
-    reloadNotifications();
+  const formatTime = (timeStr: string) => {
+    const d = new Date(timeStr);
+    if (isNaN(d.getTime())) return timeStr;
+    
+    const diffMs = Date.now() - d.getTime();
+    const diffMins = Math.floor(diffMs / 60000);
+    const diffHours = Math.floor(diffMins / 60);
+    const diffDays = Math.floor(diffHours / 24);
+
+    if (diffMins < 1) return 'Just now';
+    if (diffMins < 60) return `${diffMins}m ago`;
+    if (diffHours < 24) return `${diffHours}h ago`;
+    if (diffDays < 7) return `${diffDays}d ago`;
+    
+    return d.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
   };
 
   if (loading) {
     return <div className="text-secondary font-headline p-8">Loading notifications feed...</div>;
   }
-
-  const unreadCount = notifications.filter(n => !n.read).length;
 
   return (
     <div className="max-w-4xl mx-auto space-y-stack-lg w-full">
@@ -62,7 +73,7 @@ export const Notifications: React.FC = () => {
       <div className="flex items-center justify-between">
         <div>
           <h2 className="font-headline text-2xl font-bold text-on-surface">Notifications Feed</h2>
-          <p className="font-sans text-sm text-secondary mt-1">Real-time alerts regarding invoice approvals, payments, and compliance milestones.</p>
+          <p className="font-sans text-sm text-secondary mt-1">Real-time alerts regarding compliance warnings, account security events, and system administration updates.</p>
         </div>
 
         <div className="flex gap-2">
@@ -75,13 +86,6 @@ export const Notifications: React.FC = () => {
               <span>Mark all as read</span>
             </button>
           )}
-          <button 
-            onClick={handleClearNotifications}
-            className="flex items-center gap-2 px-4 py-2 border border-outline-variant hover:border-error hover:text-error rounded-lg font-headline text-sm font-semibold text-secondary transition-all"
-          >
-            <Trash2 className="w-4 h-4" />
-            <span>Clear feed</span>
-          </button>
         </div>
       </div>
 
@@ -96,7 +100,7 @@ export const Notifications: React.FC = () => {
           notifications.map((n) => (
             <div 
               key={n.id} 
-              onClick={() => handleMarkAsRead(n.id)}
+              onClick={() => { if (!n.read) handleMarkAsRead(n.id); }}
               className={`p-6 flex gap-4 transition-colors cursor-pointer relative group ${
                 n.read ? 'bg-surface-container-lowest hover:bg-surface-container-low/20' : 'bg-primary/5 hover:bg-primary/10'
               }`}
@@ -124,7 +128,7 @@ export const Notifications: React.FC = () => {
                   <p className={`text-sm leading-tight ${n.read ? 'text-on-surface font-semibold' : 'text-on-surface font-extrabold'}`}>
                     {n.title}
                   </p>
-                  <span className="text-[10px] text-secondary opacity-60 shrink-0">{n.timestamp}</span>
+                  <span className="text-[10px] text-secondary opacity-60 shrink-0">{formatTime(n.timestamp)}</span>
                 </div>
                 <p className="text-secondary text-xs mt-1.5 leading-relaxed">{n.description}</p>
               </div>

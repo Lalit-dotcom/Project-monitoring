@@ -45,6 +45,22 @@ function mapRowToInvoice(row: any): Invoice {
   };
 }
 
+// GET /api/invoices/types
+router.get('/types', async (req: Request, res: Response): Promise<void> => {
+  try {
+    const result = await pool.query(
+      "SELECT DISTINCT invoice_type FROM invoices WHERE invoice_type IS NOT NULL AND invoice_type != '' ORDER BY invoice_type ASC"
+    );
+    const types = result.rows.map(row => row.invoice_type);
+    res.json(types);
+  } catch (error: any) {
+    console.error('Database query error:', error);
+    res.status(500).json({
+      error: 'An internal server error occurred while retrieving invoice types.'
+    });
+  }
+});
+
 // Lightweight exists endpoint to check if invoices exist for a projectNo
 router.get('/exists', async (req: Request, res: Response): Promise<void> => {
   try {

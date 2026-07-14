@@ -86,6 +86,47 @@ async function migrate() {
       ALTER TABLE password_reset_otps ADD COLUMN IF NOT EXISTS attempt_count INTEGER DEFAULT 0;
     `);
 
+    console.log('Creating audit_logs table if it does not exist...');
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS audit_logs (
+        id SERIAL PRIMARY KEY,
+        user_id INTEGER REFERENCES users(id),
+        username TEXT,
+        category TEXT NOT NULL CHECK (category IN ('LOGIN', 'LOGOUT', 'USER_ACTIVITY', 'SYNC', 'REPORT_DOWNLOAD', 'ADMIN_CHANGE')),
+        action TEXT NOT NULL,
+        status TEXT NOT NULL CHECK (status IN ('SUCCESS', 'FAILURE')),
+        ip_address TEXT,
+        details JSONB,
+        created_at TIMESTAMP DEFAULT now()
+      );
+      CREATE INDEX IF NOT EXISTS idx_audit_logs_created_at ON audit_logs(created_at DESC);
+      CREATE INDEX IF NOT EXISTS idx_audit_logs_category ON audit_logs(category);
+      CREATE INDEX IF NOT EXISTS idx_audit_logs_username ON audit_logs(username);
+
+      CREATE TABLE IF NOT EXISTS notifications (
+        id SERIAL PRIMARY KEY,
+        category TEXT NOT NULL CHECK (category IN ('RISK_FLAG', 'SECURITY', 'ADMIN')),
+        type TEXT NOT NULL,
+        project_no TEXT REFERENCES projects(project_cd),
+        target_user_id INTEGER REFERENCES users(id),
+        title TEXT NOT NULL,
+        message TEXT NOT NULL,
+        severity TEXT NOT NULL CHECK (severity IN ('INFO', 'WARNING', 'CRITICAL')),
+        dedup_key TEXT,
+        resolved_at TIMESTAMP,
+        created_at TIMESTAMP DEFAULT now()
+      );
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_notifications_active_dedup 
+        ON notifications(dedup_key) WHERE resolved_at IS NULL AND dedup_key IS NOT NULL;
+
+      CREATE TABLE IF NOT EXISTS notification_reads (
+        notification_id INTEGER NOT NULL REFERENCES notifications(id),
+        user_id INTEGER NOT NULL REFERENCES users(id),
+        read_at TIMESTAMP DEFAULT now(),
+        PRIMARY KEY (notification_id, user_id)
+      );
+    `);
+
     console.log('Migrations executed successfully.');
   } catch (err: any) {
     console.error('Migration failed:', err.message);

@@ -3,13 +3,8 @@ import { NavLink, useNavigate } from 'react-router-dom';
 import { 
   LayoutDashboard, 
   Briefcase, 
-  FileText, 
-  Receipt, 
-  CreditCard, 
-  FileSpreadsheet, 
-  BarChart3, 
-  Bell, 
   ShieldCheck,
+  ScrollText,
   LogOut,
   Menu,
   X
@@ -44,20 +39,23 @@ export const Sidebar: React.FC<SidebarProps> = ({
     navigate('/login');
   };
 
-  const navItems = [
+  interface NavItem {
+    to: string;
+    label: string;
+    icon: any;
+    dividerAfter?: boolean;
+    badge?: boolean;
+  }
+
+  const navItems: NavItem[] = [
     { to: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
-    { to: '/projects', label: 'Projects', icon: Briefcase },
-    { to: '/purchase-orders', label: 'Purchase Orders', icon: FileText },
-    { to: '/invoices', label: 'Invoices', icon: Receipt },
-    { to: '/bill-desk', label: 'Bill Desk', icon: CreditCard },
-    { to: '/tax-invoices', label: 'Tax Invoices', icon: FileSpreadsheet },
-    { to: '/reports', label: 'Reports', icon: BarChart3, dividerAfter: true },
-    { to: '/notifications', label: 'Notifications', icon: Bell, badge: true, dividerAfter: true },
+    { to: '/projects', label: 'Projects', icon: Briefcase, dividerAfter: true },
     ...(user?.role === 'superadmin' ? [
       // Note: The general '/administration' landing route is redundant for superadmin navigation
       // as they only need direct access to the Project Managers dashboard for now.
       // Keeping `/administration` route registered in routing, but unlinked from sidebar.
-      { to: '/administration/managers', label: 'Project Managers', icon: ShieldCheck }
+      { to: '/administration/managers', label: 'Project Managers', icon: ShieldCheck },
+      { to: '/administration/audit-logs', label: 'Audit Logs', icon: ScrollText }
     ] : [])
   ];
 
@@ -200,20 +198,12 @@ export const Sidebar: React.FC<SidebarProps> = ({
           isCollapsed ? 'flex-col gap-4' : 'px-8'
         }`}
       >
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 bg-[#1B2333] border border-white/10 rounded-lg flex items-center justify-center text-white shrink-0 shadow-sm">
-            <Briefcase className="w-6 h-6" aria-hidden="true" />
-          </div>
-          {!isCollapsed && (
-            <div>
-              <h1 className="font-headline text-2xl font-bold tracking-tight text-white leading-none">
-                NPMS
-              </h1>
-              <p className="font-headline text-[9px] text-[#9CA3AF] font-bold tracking-widest uppercase mt-1.5 leading-tight">
-                NICSI PROJECT MONITORING SYSTEM
-              </p>
-            </div>
-          )}
+        <div className={`bg-white rounded-lg flex items-center justify-center shadow-sm shrink-0 transition-all duration-200 ${isCollapsed ? 'p-1' : 'p-1.5'}`}>
+          <img 
+            src="/logo.png" 
+            alt="NICSI Logo" 
+            className={`${isCollapsed ? 'h-4' : 'h-8'} object-contain transition-all duration-200`}
+          />
         </div>
 
         <div className="flex items-center gap-1">
@@ -274,14 +264,12 @@ export const Sidebar: React.FC<SidebarProps> = ({
             >
               {/* Brand row */}
               <div className="px-8 py-8 flex items-center justify-between border-b border-white/10">
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 bg-[#1B2333] border border-white/10 rounded-lg flex items-center justify-center text-white shrink-0 shadow-sm">
-                    <Briefcase className="w-6 h-6" aria-hidden="true" />
-                  </div>
-                  <div>
-                    <h1 className="font-headline text-2xl font-bold tracking-tight text-white leading-none">NPMS</h1>
-                    <p className="font-headline text-[9px] text-[#9CA3AF] font-bold tracking-widest uppercase mt-1.5 leading-tight">NICSI PROJECT MONITORING SYSTEM</p>
-                  </div>
+                <div className="bg-white rounded-lg p-1.5 flex items-center justify-center shadow-sm shrink-0">
+                  <img 
+                    src="/logo.png" 
+                    alt="NICSI Logo" 
+                    className="h-8 object-contain"
+                  />
                 </div>
                 <button
                   onClick={onMobileClose}

@@ -37,6 +37,22 @@ function mapRowToPurchaseOrder(row: any): PurchaseOrder {
   };
 }
 
+// GET /api/purchase-orders/statuses
+router.get('/statuses', async (req: Request, res: Response): Promise<void> => {
+  try {
+    const result = await pool.query(
+      "SELECT DISTINCT approval_status FROM purchase_orders WHERE approval_status IS NOT NULL AND approval_status != '' ORDER BY approval_status ASC"
+    );
+    const statuses = result.rows.map(row => row.approval_status);
+    res.json(statuses);
+  } catch (error: any) {
+    console.error('Database query error:', error);
+    res.status(500).json({
+      error: 'An internal server error occurred while retrieving purchase order statuses.'
+    });
+  }
+});
+
 router.get('/', async (req: Request, res: Response): Promise<void> => {
   try {
     // 1. Check distinctValues request

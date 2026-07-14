@@ -40,6 +40,38 @@ function mapRowToTaxInvoice(row: any): TaxInvoice {
   };
 }
 
+// GET /api/tax-invoices/bill-types
+router.get('/bill-types', async (req: Request, res: Response): Promise<void> => {
+  try {
+    const result = await pool.query(
+      "SELECT DISTINCT bill_type FROM tax_invoices WHERE bill_type IS NOT NULL AND bill_type != '' ORDER BY bill_type ASC"
+    );
+    const billTypes = result.rows.map(row => row.bill_type);
+    res.json(billTypes);
+  } catch (error: any) {
+    console.error('Database query error:', error);
+    res.status(500).json({
+      error: 'An internal server error occurred while retrieving tax invoice bill types.'
+    });
+  }
+});
+
+// GET /api/tax-invoices/states
+router.get('/states', async (req: Request, res: Response): Promise<void> => {
+  try {
+    const result = await pool.query(
+      "SELECT DISTINCT state_description FROM tax_invoices WHERE state_description IS NOT NULL AND state_description != '' ORDER BY state_description ASC"
+    );
+    const states = result.rows.map(row => row.state_description);
+    res.json(states);
+  } catch (error: any) {
+    console.error('Database query error:', error);
+    res.status(500).json({
+      error: 'An internal server error occurred while retrieving tax invoice states.'
+    });
+  }
+});
+
 router.get('/', async (req: Request, res: Response): Promise<void> => {
   try {
     // 1. Check distinctValues request

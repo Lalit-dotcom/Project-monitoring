@@ -38,6 +38,22 @@ function mapRowToBillDesk(row: any): BillDeskRecord {
   };
 }
 
+// GET /api/bill-desk/statuses
+router.get('/statuses', async (req: Request, res: Response): Promise<void> => {
+  try {
+    const result = await pool.query(
+      "SELECT DISTINCT status FROM bill_desk WHERE status IS NOT NULL AND status != '' ORDER BY status ASC"
+    );
+    const statuses = result.rows.map(row => row.status);
+    res.json(statuses);
+  } catch (error: any) {
+    console.error('Database query error:', error);
+    res.status(500).json({
+      error: 'An internal server error occurred while retrieving bill desk statuses.'
+    });
+  }
+});
+
 router.get('/', async (req: Request, res: Response): Promise<void> => {
   try {
     // 1. Check distinctValues request

@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Search, Bell, HelpCircle, Sun, Moon, Menu, X } from 'lucide-react';
+import { Search, Bell, Sun, Moon, Menu, X } from 'lucide-react';
 import { useTheme } from '../context/ThemeContext';
 
 interface TopbarProps {
@@ -12,6 +12,7 @@ interface TopbarProps {
   isCollapsed?: boolean;
   /** Called when the hamburger button is clicked (mobile) */
   onHamburgerClick?: () => void;
+  backButton?: React.ReactNode;
 }
 
 export const Topbar: React.FC<TopbarProps> = ({
@@ -22,6 +23,7 @@ export const Topbar: React.FC<TopbarProps> = ({
   unreadCount = 1,
   isCollapsed = false,
   onHamburgerClick,
+  backButton,
 }) => {
   const { theme, toggleTheme } = useTheme();
   const [mobileSearchOpen, setMobileSearchOpen] = useState(false);
@@ -41,6 +43,13 @@ export const Topbar: React.FC<TopbarProps> = ({
       >
         <Menu className="w-5 h-5" aria-hidden="true" />
       </button>
+
+      {/* Back Button (left of search input) */}
+      {!mobileSearchOpen && backButton && (
+        <div className="mr-3 md:mr-4 shrink-0 flex items-center">
+          {backButton}
+        </div>
+      )}
 
       {/* Search Input — hidden on mobile (collapsed to icon) */}
       {!mobileSearchOpen && (
@@ -123,17 +132,12 @@ export const Topbar: React.FC<TopbarProps> = ({
               />
             )}
           </Link>
-
-          <button
-            className="text-secondary hover:text-primary transition-colors p-1 hover:bg-surface-container rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
-            aria-label="Help resources"
-          >
-            <HelpCircle className="w-5 h-5" aria-hidden="true" />
-          </button>
         </div>
 
         {/* Divider */}
-        <div className="h-8 w-px bg-outline-variant hidden md:block" aria-hidden="true" />
+        {action && (
+          <div className="h-8 w-px bg-outline-variant hidden md:block" aria-hidden="true" />
+        )}
 
         {/* Context-Specific Action */}
         {action && (

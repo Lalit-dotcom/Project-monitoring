@@ -72,6 +72,12 @@ export default {
         "status-error-bg": "var(--color-status-error-bg)",
         "status-error-text": "var(--color-status-error-text)",
         "status-error-border": "var(--color-status-error-border)",
+
+        // Saffron accent tokens
+        "accent": "var(--color-accent)",
+        "on-accent": "var(--color-on-accent)",
+        "accent-container": "var(--color-accent-container)",
+        "on-accent-container": "var(--color-on-accent-container)",
       },
       borderRadius: {
         "sm": "0.25rem",          // 4px

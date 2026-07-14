@@ -1,9 +1,7 @@
-import React, { useState, useEffect } from 'react';
-import { useParams, useOutletContext, useNavigate } from 'react-router-dom';
+import React, { useState, useEffect, useRef } from 'react';
+import { useParams, useOutletContext, useNavigate, useSearchParams } from 'react-router-dom';
 import { 
   Briefcase, 
-  Share2, 
-  Plus, 
   Info, 
   ChevronLeft, 
   ChevronRight, 
@@ -13,7 +11,10 @@ import {
   MapPin,
   AlertCircle,
   MoreVertical,
-  ShoppingCart
+  ShoppingCart,
+  Download,
+  Loader2,
+  Bell
 } from 'lucide-react';
 import {
   ComposedChart,
@@ -27,8 +28,9 @@ import {
 } from 'recharts';
 import { useTheme } from '../context/ThemeContext';
 import { api } from '../lib/api';
-import type { Project, Invoice, PurchaseOrder, TaxInvoice, Activity } from '../types';
+import type { Project, Invoice, PurchaseOrder, TaxInvoice, Activity, DatabaseProject } from '../types';
 import { Toast } from '../components/Toast';
+import { NoticeModal } from '../components/NoticeModal';
 
 type TabName = 'Overview' | 'Purchase Orders' | 'Invoices' | 'Tax Invoices' | 'Bill Desk' | 'Documents';
 
@@ -38,14 +40,79 @@ export const ProjectDetail: React.FC = () => {
   const { searchQuery } = useOutletContext<{ searchQuery: string }>();
   const { theme } = useTheme();
 
-  const [project, setProject] = useState<Project | null>(null);
+  const [project, setProject] = useState<(Project & DatabaseProject) | null>(null);
   const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [purchaseOrders, setPurchaseOrders] = useState<PurchaseOrder[]>([]);
   const [taxInvoices, setTaxInvoices] = useState<TaxInvoice[]>([]);
-  const [activities, setActivities] = useState<Activity[]>([]);
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState<TabName>('Invoices');
+  const [showExportPopover, setShowExportPopover] = useState(false);
+  const [isExporting, setIsExporting] = useState(false);
+  const [showNoticeModal, setShowNoticeModal] = useState(false);
+  const exportDropdownRef = useRef<HTMLDivElement>(null);
+  const exportButtonRef = useRef<HTMLButtonElement>(null);
+
+  const handleExport = async (format: 'excel' | 'pdf') => {
+    if (!project) return;
+    setShowExportPopover(false);
+    setIsExporting(true);
+    try {
+      await api.exportProjectFile(project.projectCd, format);
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setIsExporting(false);
+    }
+  };
+
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (
+        showExportPopover &&
+        exportDropdownRef.current &&
+        !exportDropdownRef.current.contains(event.target as Node) &&
+        exportButtonRef.current &&
+        !exportButtonRef.current.contains(event.target as Node)
+      ) {
+        setShowExportPopover(false);
+      }
+    };
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape' && showExportPopover) {
+        setShowExportPopover(false);
+      }
+    };
+
+    document.addEventListener('mousedown', handleClickOutside);
+    document.addEventListener('keydown', handleKeyDown);
+
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+      document.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [showExportPopover]);
+  const [searchParams, setSearchParams] = useSearchParams();
   const [showToast, setShowToast] = useState(false);
+
+  // Map URL tab param to TabName
+  const getTabFromParam = (param: string | null): TabName => {
+    if (!param) return 'Overview';
+    const normalized = param.toLowerCase().replace(/[^a-z0-9]/g, '');
+    if (normalized === 'purchaseorders' || normalized === 'po' || normalized === 'pos') return 'Purchase Orders';
+    if (normalized === 'invoices') return 'Invoices';
+    if (normalized === 'taxinvoices') return 'Tax Invoices';
+    if (normalized === 'billdesk') return 'Bill Desk';
+    if (normalized === 'documents') return 'Documents';
+    return 'Overview';
+  };
+
+  const activeTab = getTabFromParam(searchParams.get('tab'));
+
+  const handleTabChange = (tab: TabName) => {
+    const paramVal = tab.toLowerCase().replace(/\s+/g, '-');
+    setSearchParams({ tab: paramVal }, { replace: true });
+    setCurrentPage(1);
+  };
 
   // Pagination states
   const [currentPage, setCurrentPage] = useState(1);
@@ -64,8 +131,6 @@ export const ProjectDetail: React.FC = () => {
           setPurchaseOrders(allPOs.filter(po => po.projectNo === id));
           const allTxs = await api.getTaxInvoices();
           setTaxInvoices(allTxs.filter(tx => tx.projectNo === id));
-          const allActs = await api.getActivities();
-          setActivities(allActs.filter(act => act.projectNo === id));
           
           // Trigger system sync toast on load
           setShowToast(true);
@@ -126,6 +191,60 @@ export const ProjectDetail: React.FC = () => {
   const paidPct = poAmount > 0 ? Math.round((paidAmount / poAmount) * 100) : 0;
   const outstandingPct = poAmount > 0 ? Math.round((outstandingAmount / poAmount) * 100) : 0;
 
+  // Derive activities dynamically from real database records (POs, Invoices, Tax Invoices)
+  const getDerivedActivities = (): Activity[] => {
+    const list: Activity[] = [];
+
+    purchaseOrders.forEach(po => {
+      if (!po.poDate) return;
+      list.push({
+        id: `ACT-PO-${po.id}`,
+        projectNo: po.projectNo,
+        title: 'Purchase Order Linked',
+        actor: po.vendorName || 'System',
+        timestamp: po.poDate,
+        type: 'info',
+        description: `PO ${po.finalPoNo} for ${formatINR(po.total || 0, false)} linked successfully.`
+      });
+    });
+
+    invoices.forEach(inv => {
+      if (!inv.invoiceDate) return;
+      const isPaid = (inv.amountPaid || 0) >= (inv.invoiceAmount || 0);
+      list.push({
+        id: `ACT-INV-${inv.id}`,
+        projectNo: inv.projectNo,
+        title: isPaid ? 'Invoice Settled' : 'Invoice Registered',
+        actor: inv.vendorName || 'System',
+        timestamp: inv.invoiceDate,
+        type: isPaid ? 'success' : 'info',
+        description: `Invoice ${inv.invoiceNum} for ${formatINR(inv.invoiceAmount || 0, false)} registered (Paid: ${formatINR(inv.amountPaid || 0, false)}).`
+      });
+    });
+
+    taxInvoices.forEach(tx => {
+      if (!tx.billDate) return;
+      list.push({
+        id: `ACT-TX-${tx.id}`,
+        projectNo: tx.projectNo,
+        title: 'Tax Invoice Issued',
+        actor: tx.custGstinNo || 'System',
+        timestamp: tx.billDate,
+        type: 'info',
+        description: `Tax Invoice ${tx.userBillNo} for ${formatINR(tx.totalAmount || 0, false)} issued.`
+      });
+    });
+
+    // Sort by date descending
+    return list.sort((a, b) => {
+      const dateA = new Date(a.timestamp);
+      const dateB = new Date(b.timestamp);
+      return dateB.getTime() - dateA.getTime();
+    });
+  };
+
+  const derivedActivities = getDerivedActivities();
+
   // Filter lists based on search query in layout context
   const filteredInvoices = invoices.filter(i => 
     String(i.invoiceNum || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -184,21 +303,57 @@ export const ProjectDetail: React.FC = () => {
             <h2 className="font-headline text-2xl font-bold text-on-surface">{project.name}</h2>
             <p className="text-secondary font-sans text-sm max-w-2xl mt-1">{project.description}</p>
           </div>
-          <div className="flex gap-2 shrink-0">
-            <button 
-              onClick={() => alert('Detail report shared.')}
-              className="flex items-center gap-2 px-4 py-2 border border-outline-variant rounded-lg text-secondary font-headline text-sm font-semibold hover:bg-surface-container transition-all"
+
+          {/* Header action buttons: Notice + Download */}
+          <div className="flex items-center gap-2 shrink-0 self-end md:self-center">
+
+            {/* Notice Button */}
+            <button
+              onClick={() => setShowNoticeModal(true)}
+              className="h-10 px-4 py-2 border border-outline-variant hover:border-primary text-secondary hover:text-primary hover:bg-primary/5 rounded-md font-sans text-xs font-bold flex items-center gap-2 transition-all bg-surface-container-lowest shadow-sm"
+              title="Send a system notice to vendor or client"
             >
-              <Share2 className="w-4 h-4 text-outline" />
-              <span>Share Report</span>
+              <Bell className="w-4 h-4" />
+              <span>Notice</span>
             </button>
-            <button 
-              onClick={() => navigate('/bill-desk')}
-              className="flex items-center gap-2 px-4 py-2 bg-primary text-white rounded-lg font-headline text-sm font-semibold hover:bg-primary-container transition-all shadow-sm"
-            >
-              <Plus className="w-4 h-4" />
-              <span>Create Invoice</span>
-            </button>
+
+            {/* Download / Export Button */}
+            <div className="relative">
+              <button
+                ref={exportButtonRef}
+                onClick={() => setShowExportPopover(!showExportPopover)}
+                disabled={isExporting}
+                className="h-10 px-4 py-2 border border-outline-variant hover:border-outline text-secondary hover:bg-surface-container-low rounded-md font-sans text-xs font-bold flex items-center gap-2 transition-all bg-surface-container-lowest shadow-sm"
+              >
+                {isExporting ? (
+                  <Loader2 className="w-4 h-4 animate-spin text-secondary" />
+                ) : (
+                  <Download className="w-4 h-4 text-secondary" />
+                )}
+                <span>Download</span>
+              </button>
+
+              {showExportPopover && (
+                <div 
+                  ref={exportDropdownRef}
+                  className="absolute right-0 mt-2 w-48 bg-surface border border-outline-variant rounded-md shadow-lg z-50 py-1"
+                >
+                  <button
+                    onClick={() => handleExport('excel')}
+                    className="w-full text-left px-4 py-2 text-xs font-medium text-on-surface hover:bg-surface-container-low transition-colors"
+                  >
+                    Download as Excel
+                  </button>
+                  <button
+                    onClick={() => handleExport('pdf')}
+                    className="w-full text-left px-4 py-2 text-xs font-medium text-on-surface hover:bg-surface-container-low transition-colors"
+                  >
+                    Download as PDF
+                  </button>
+                </div>
+              )}
+            </div>
+
           </div>
         </div>
       </div>
@@ -275,7 +430,7 @@ export const ProjectDetail: React.FC = () => {
                 {(['Overview', 'Purchase Orders', 'Invoices', 'Tax Invoices', 'Bill Desk', 'Documents'] as TabName[]).map((tab) => (
                   <button
                     key={tab}
-                    onClick={() => { setActiveTab(tab); setCurrentPage(1); }}
+                    onClick={() => handleTabChange(tab)}
                     className={`h-full px-1 font-headline text-xs font-semibold tracking-wider uppercase whitespace-nowrap transition-all border-b-2 ${
                       activeTab === tab 
                         ? 'text-primary border-primary font-bold' 
@@ -336,7 +491,7 @@ export const ProjectDetail: React.FC = () => {
                         paginate(filteredInvoices).map((inv) => {
                           const status = inv.unpaid && inv.unpaid > 0 ? 'Pending' : 'Paid';
                           return (
-                            <tr key={inv.id} onClick={() => navigate(`/invoices?projectNo=${id}`)} className="hover:bg-surface transition-colors cursor-pointer group">
+                            <tr key={inv.id} className="hover:bg-surface transition-colors group">
                               <td className="px-6 py-4">
                                 <div className="flex items-center gap-3">
                                   <div className="w-8 h-8 rounded bg-primary/5 flex items-center justify-center text-primary">
@@ -413,7 +568,7 @@ export const ProjectDetail: React.FC = () => {
                         </tr>
                       ) : (
                         paginate(filteredPOs).map((po) => (
-                          <tr key={po.id} onClick={() => navigate(`/purchase-orders?projectNo=${id}`)} className="hover:bg-surface transition-colors cursor-pointer">
+                          <tr key={po.id} className="hover:bg-surface transition-colors">
                             <td className="px-6 py-4 font-headline text-sm font-semibold text-primary">{po.finalPoNo || po.id}</td>
                             <td className="px-6 py-4 text-secondary text-sm">{formatDate(po.poDate)}</td>
                             <td className="px-6 py-4 font-sans text-sm font-medium">{po.vendorName}</td>
@@ -455,7 +610,7 @@ export const ProjectDetail: React.FC = () => {
                         </tr>
                       ) : (
                         paginate(filteredTxs).map((tx) => (
-                          <tr key={tx.id} onClick={() => navigate(`/tax-invoices?projectNo=${id}`)} className="hover:bg-surface transition-colors cursor-pointer">
+                          <tr key={tx.id} className="hover:bg-surface transition-colors">
                             <td className="px-6 py-4 font-headline text-sm font-semibold text-primary">{tx.userBillNo || tx.id}</td>
                             <td className="px-6 py-4 text-secondary text-sm">{formatDate(tx.billDate)}</td>
                             <td className="px-6 py-4 font-sans text-sm text-secondary">{tx.poNo}</td>
@@ -623,30 +778,11 @@ export const ProjectDetail: React.FC = () => {
 
               {/* DOCUMENTS TAB */}
               {activeTab === 'Documents' && (
-                <table className="w-full text-left border-collapse">
-                  <thead className="bg-surface-container-low/50">
-                    <tr className="border-b border-outline-variant">
-                      <th className="px-6 py-4 font-headline text-xs font-bold text-secondary uppercase tracking-wider">Document Name</th>
-                      <th className="px-6 py-4 font-headline text-xs font-bold text-secondary uppercase tracking-wider">Category</th>
-                      <th className="px-6 py-4 font-headline text-xs font-bold text-secondary uppercase tracking-wider text-right">Size</th>
-                      <th className="px-6 py-4 font-headline text-xs font-bold text-secondary uppercase tracking-wider text-center">Action</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-outline-variant font-sans">
-                    <tr className="hover:bg-surface">
-                      <td className="px-6 py-4 font-medium text-sm text-primary hover:underline cursor-pointer">Sanction_Order_Signed.pdf</td>
-                      <td className="px-6 py-4 text-secondary text-sm">Government Release</td>
-                      <td className="px-6 py-4 text-right text-secondary text-sm">2.4 MB</td>
-                      <td className="px-6 py-4 text-center"><a href="#" className="text-primary text-xs font-bold hover:underline">DOWNLOAD</a></td>
-                    </tr>
-                    <tr className="hover:bg-surface">
-                      <td className="px-6 py-4 font-medium text-sm text-primary hover:underline cursor-pointer">Compliance_Clearance_2026.pdf</td>
-                      <td className="px-6 py-4 text-secondary text-sm">Audit Certificate</td>
-                      <td className="px-6 py-4 text-right text-secondary text-sm">1.8 MB</td>
-                      <td className="px-6 py-4 text-center"><a href="#" className="text-primary text-xs font-bold hover:underline">DOWNLOAD</a></td>
-                    </tr>
-                  </tbody>
-                </table>
+                <div className="p-12 text-center text-secondary font-headline flex flex-col items-center gap-3 bg-surface-container-low/10 border border-outline-variant rounded-lg">
+                  <span className="text-3xl opacity-40">📁</span>
+                  <span className="font-semibold text-sm">No documents uploaded yet</span>
+                  <span className="text-xs text-secondary/60">Documents associated with this project will appear here once uploaded.</span>
+                </div>
               )}
 
             </div>
@@ -656,7 +792,7 @@ export const ProjectDetail: React.FC = () => {
           <div className="bg-surface-container-lowest border border-outline-variant rounded-md p-6 shadow-sm">
             <h3 className="font-headline text-lg font-bold mb-6">Recent Activity</h3>
             <div className="space-y-6">
-              {activities.length === 0 ? (
+              {derivedActivities.length === 0 ? (
                 <div className="flex gap-4">
                   <div className="flex flex-col items-center">
                     <div className="w-8 h-8 rounded-full bg-primary flex items-center justify-center text-white ring-4 ring-primary/10">
@@ -669,7 +805,7 @@ export const ProjectDetail: React.FC = () => {
                   </div>
                 </div>
               ) : (
-                activities.map((act, index) => (
+                derivedActivities.map((act, index) => (
                   <div key={act.id} className="flex gap-4">
                     <div className="flex flex-col items-center">
                       <div className={`w-8 h-8 rounded-full flex items-center justify-center ring-4 ${
@@ -687,13 +823,13 @@ export const ProjectDetail: React.FC = () => {
                           <Mail className="w-4 h-4" />
                         )}
                       </div>
-                      {index < activities.length - 1 && (
+                      {index < derivedActivities.length - 1 && (
                         <div className="w-0.5 h-full bg-outline-variant mt-2" />
                       )}
                     </div>
-                    <div className={index < activities.length - 1 ? 'pb-6' : ''}>
+                    <div className={index < derivedActivities.length - 1 ? 'pb-6' : ''}>
                       <p className="text-sm font-semibold text-on-surface">{act.title}</p>
-                      <p className="text-xs text-secondary mt-1">{act.timestamp} &bull; by {act.actor}</p>
+                      <p className="text-xs text-secondary mt-1">{formatDate(act.timestamp)} &bull; by {act.actor}</p>
                       <p className="text-xs text-secondary font-sans mt-2">{act.description}</p>
                     </div>
                   </div>
@@ -767,6 +903,13 @@ export const ProjectDetail: React.FC = () => {
 
         </div>
       </div>
+
+      {/* Notice Modal — two-step modal for vendor bills / client funds notices */}
+      <NoticeModal
+        open={showNoticeModal}
+        project={project}
+        onClose={() => setShowNoticeModal(false)}
+      />
     </div>
   );
 };

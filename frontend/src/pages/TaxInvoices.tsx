@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
-import { MoreVertical, AlertCircle, Search, X, Filter, AlertTriangle } from 'lucide-react';
+import { MoreVertical, AlertCircle, Search, X, Filter, AlertTriangle, Download, Loader2 } from 'lucide-react';
 import { api } from '../lib/api';
 import type { TaxInvoice } from '../types';
 import { Breadcrumbs } from '../components/Breadcrumbs';
@@ -44,13 +44,16 @@ export const TaxInvoices: React.FC = () => {
   // Local inputs
   const [searchVal, setSearchVal] = useState(search);
   const [showFilterPopover, setShowFilterPopover] = useState(false);
-  const [showAdvanced, setShowAdvanced] = useState(false);
+  const [showExportPopover, setShowExportPopover] = useState(false);
+  const [isExporting, setIsExporting] = useState(false);
 
   // Filter Refs
   const filterDropdownRef = useRef<HTMLDivElement>(null);
   const filterButtonRef = useRef<HTMLButtonElement>(null);
+  const exportDropdownRef = useRef<HTMLDivElement>(null);
+  const exportButtonRef = useRef<HTMLButtonElement>(null);
 
-  // Close filter popover on click outside or Escape key press
+  // Close filter/export popovers on click outside or Escape key press
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
       if (
@@ -62,11 +65,21 @@ export const TaxInvoices: React.FC = () => {
       ) {
         setShowFilterPopover(false);
       }
+      if (
+        showExportPopover &&
+        exportDropdownRef.current &&
+        !exportDropdownRef.current.contains(event.target as Node) &&
+        exportButtonRef.current &&
+        !exportButtonRef.current.contains(event.target as Node)
+      ) {
+        setShowExportPopover(false);
+      }
     };
 
     const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape' && showFilterPopover) {
+      if (event.key === 'Escape') {
         setShowFilterPopover(false);
+        setShowExportPopover(false);
       }
     };
 
@@ -77,7 +90,7 @@ export const TaxInvoices: React.FC = () => {
       document.removeEventListener('mousedown', handleClickOutside);
       document.removeEventListener('keydown', handleKeyDown);
     };
-  }, [showFilterPopover]);
+  }, [showFilterPopover, showExportPopover]);
 
   // Local advanced fields
   const [localMinAmount, setLocalMinAmount] = useState(minAmount);
@@ -197,7 +210,6 @@ export const TaxInvoices: React.FC = () => {
       billType: localBillType,
       riskMissingIrn: localRiskMissingIrn ? 'true' : undefined
     });
-    setShowAdvanced(false);
   };
 
   const handleResetAdvanced = () => {
@@ -217,7 +229,6 @@ export const TaxInvoices: React.FC = () => {
       billType: undefined,
       riskMissingIrn: undefined
     });
-    setShowAdvanced(false);
   };
 
   const handleSort = (field: string) => {
@@ -399,11 +410,11 @@ export const TaxInvoices: React.FC = () => {
           <p className="font-sans text-sm text-secondary mt-1">Track and manage GST-compliant tax invoices and associated metadata.</p>
         </div>
         
-        {/* Header Action: Filter Toggle Button */}
+        {/* Header Actions: Filter + Download buttons */}
         <div className="flex items-center gap-3 self-end md:self-center shrink-0">
           <button 
             ref={filterButtonRef}
-            onClick={() => { setShowFilterPopover(!showFilterPopover); }}
+            onClick={() => { setShowFilterPopover(!showFilterPopover); setShowExportPopover(false); }}
             className={`h-10 px-4 py-2 border rounded-full font-sans text-xs font-bold flex items-center gap-2 transition-all shadow-sm ${
               activeChips.length > 0 
                 ? 'border-primary text-primary bg-primary/5 hover:bg-primary/10'
@@ -418,6 +429,55 @@ export const TaxInvoices: React.FC = () => {
               </span>
             )}
           </button>
+
+          {/* Download Button */}
+          <div className="relative">
+            <button
+              ref={exportButtonRef}
+              onClick={() => { setShowExportPopover(!showExportPopover); setShowFilterPopover(false); }}
+              disabled={isExporting}
+              className="h-10 px-4 py-2 border border-outline-variant hover:border-outline text-secondary hover:bg-surface-container-low rounded-full font-sans text-xs font-bold flex items-center justify-center gap-2 transition-all bg-white shadow-sm"
+            >
+              {isExporting ? (
+                <Loader2 className="w-4 h-4 animate-spin text-secondary" />
+              ) : (
+                <Download className="w-4 h-4 text-secondary" />
+              )}
+              <span>Download</span>
+            </button>
+
+            {showExportPopover && (
+              <div
+                ref={exportDropdownRef}
+                className="absolute right-0 mt-2 w-48 bg-surface border border-outline-variant rounded-md shadow-lg z-50 py-1"
+              >
+                <button
+                  onClick={async () => {
+                    setShowExportPopover(false);
+                    setIsExporting(true);
+                    try {
+                      await api.exportListFile('tax-invoices', { search, billStatus: billStatus !== 'All' ? billStatus : undefined, state: state !== 'All' ? state : undefined, billType: billType !== 'All' ? billType : undefined, missingIrn: missingIrn || undefined, projectNo: projectNo || undefined, minAmount: minAmount || undefined, maxAmount: maxAmount || undefined, billDateFrom: billDateFrom || undefined, billDateTo: billDateTo || undefined, riskMissingIrn: riskMissingIrn || undefined }, 'excel');
+                    } catch (_) {} finally { setIsExporting(false); }
+                  }}
+                  className="w-full text-left px-4 py-2 text-xs font-medium text-on-surface hover:bg-surface-container-low transition-colors"
+                >
+                  Download as Excel
+                </button>
+                <button
+                  onClick={async () => {
+                    setShowExportPopover(false);
+                    setIsExporting(true);
+                    try {
+                      await api.exportListFile('tax-invoices', { search, billStatus: billStatus !== 'All' ? billStatus : undefined, state: state !== 'All' ? state : undefined, billType: billType !== 'All' ? billType : undefined, missingIrn: missingIrn || undefined, projectNo: projectNo || undefined, minAmount: minAmount || undefined, maxAmount: maxAmount || undefined, billDateFrom: billDateFrom || undefined, billDateTo: billDateTo || undefined, riskMissingIrn: riskMissingIrn || undefined }, 'pdf');
+                    } catch (_) {} finally { setIsExporting(false); }
+                  }}
+                  className="w-full text-left px-4 py-2 text-xs font-medium text-on-surface hover:bg-surface-container-low transition-colors"
+                >
+                  Download as PDF
+                </button>
+              </div>
+            )}
+          </div>
         </div>
       </div>
 
@@ -472,18 +532,7 @@ export const TaxInvoices: React.FC = () => {
               ))}
             </select>
 
-            {/* More Filters Toggle */}
-            <button 
-              onClick={() => setShowAdvanced(!showAdvanced)}
-              className={`h-10 px-4 py-2 border rounded-lg transition-all font-headline text-sm font-semibold flex items-center gap-2 ${
-                showAdvanced || minAmount || maxAmount || billDateFrom || billDateTo || missingIrn || billType !== 'All'
-                  ? 'border-primary text-primary bg-primary/5 hover:bg-primary/10'
-                  : 'border-outline-variant hover:border-outline text-secondary bg-white'
-              }`}
-            >
-              <Filter className="w-4 h-4" />
-              <span>More Filters</span>
-            </button>
+
 
             {/* Clear Filters Ghost Button */}
             <button 
@@ -496,8 +545,7 @@ export const TaxInvoices: React.FC = () => {
           </div>
 
           {/* ADVANCED FILTER DRAWER PANEL */}
-          {showAdvanced && (
-            <div className="border-t border-outline-variant pt-6 mt-4 space-y-4 font-sans">
+          <div className="border-t border-outline-variant pt-6 mt-4 space-y-4 font-sans">
               <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
                 {/* Amount bounds */}
                 <div className="space-y-3">
@@ -611,7 +659,6 @@ export const TaxInvoices: React.FC = () => {
                 </button>
               </div>
             </div>
-          )}
         </div>
       )}
 

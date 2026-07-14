@@ -200,7 +200,7 @@ export const Login: React.FC = () => {
           <div className="relative z-10 self-start">
             <div className="bg-white rounded-lg p-2 flex items-center justify-center shadow-md">
               <img 
-                src="/nicsilogo.jpg.jpeg" 
+                src="/logo.png" 
                 alt="NICSI Logo" 
                 className="h-8 object-contain"
               />

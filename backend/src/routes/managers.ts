@@ -2,6 +2,8 @@ import { Router, Response } from 'express';
 import bcrypt from 'bcrypt';
 import { pool } from '../db.js';
 import { AuthenticatedRequest } from '../middleware/requireAuth.js';
+import { logAudit } from '../lib/auditLog.js';
+import { createNotification } from '../lib/createNotification.js';
 
 const router = Router();
 
@@ -50,6 +52,21 @@ router.post('/', async (req: AuthenticatedRequest, res: Response): Promise<void>
     const { fullName, username, password, email, mobileNumber } = req.body;
 
     if (!fullName || !username || !password || !email) {
+      await logAudit({
+        userId: req.user?.userId,
+        username: req.user?.username || 'unknown',
+        category: 'ADMIN_CHANGE',
+        action: 'MANAGER_CREATED',
+        status: 'FAILURE',
+        ip: req.ip || 'unknown',
+        details: {
+          error: 'Missing required fields',
+          fullName: !!fullName,
+          username: !!username,
+          password: !!password,
+          email: !!email
+        }
+      });
       res.status(400).json({ error: 'Full Name, Username, Password, and Email are required.' });
       return;
     }
@@ -57,6 +74,18 @@ router.post('/', async (req: AuthenticatedRequest, res: Response): Promise<void>
     // 1. Check username uniqueness
     const userCheck = await pool.query('SELECT id FROM users WHERE username = $1', [username]);
     if (userCheck.rows.length > 0) {
+      await logAudit({
+        userId: req.user?.userId,
+        username: req.user?.username || 'unknown',
+        category: 'ADMIN_CHANGE',
+        action: 'MANAGER_CREATED',
+        status: 'FAILURE',
+        ip: req.ip || 'unknown',
+        details: {
+          error: 'Username is already taken',
+          requestedUsername: username
+        }
+      });
       res.status(409).json({ error: 'Username is already taken.' });
       return;
     }
@@ -112,6 +141,29 @@ router.post('/', async (req: AuthenticatedRequest, res: Response): Promise<void>
     const createdPm = pmInsertResult.rows[0];
     const createdUser = userInsertResult.rows[0];
 
+    await logAudit({
+      userId: req.user?.userId,
+      username: req.user?.username || 'unknown',
+      category: 'ADMIN_CHANGE',
+      action: 'MANAGER_CREATED',
+      status: 'SUCCESS',
+      ip: req.ip || 'unknown',
+      details: {
+        prj_mgr_id: createdPm.prj_mgr_id,
+        name: createdPm.prj_mgr_name,
+        username: createdUser.username,
+        email: createdPm.email
+      }
+    });
+
+    await createNotification({
+      category: 'ADMIN',
+      type: 'MANAGER_CREATED',
+      title: 'New Manager Created',
+      message: `Project manager ${createdPm.prj_mgr_name} (username: ${createdUser.username}) has been successfully created.`,
+      severity: 'INFO'
+    });
+
     res.status(201).json({
       prjMgrId: createdPm.prj_mgr_id,
       prjMgrName: createdPm.prj_mgr_name,
@@ -127,8 +179,22 @@ router.post('/', async (req: AuthenticatedRequest, res: Response): Promise<void>
   } catch (error: any) {
     await pool.query('ROLLBACK');
     console.error('Error creating manager:', error);
+    await logAudit({
+      userId: req.user?.userId,
+      username: req.user?.username || 'unknown',
+      category: 'ADMIN_CHANGE',
+      action: 'MANAGER_CREATED',
+      status: 'FAILURE',
+      ip: req.ip || 'unknown',
+      details: {
+        error: error.message
+      }
+    });
     res.status(500).json({ error: 'Failed to create project manager.' });
   }
 });
+
+// NOTE / GAP: The superadmin manual password-reset feature (POST /api/managers/:prjMgrId/reset-password with forced must_change_password)
+// is not yet implemented in the current codebase. When built, it should log category 'ADMIN_CHANGE', action 'PASSWORD_RESET_BY_ADMIN' with status 'SUCCESS'/'FAILURE'.
 
 export default router;
