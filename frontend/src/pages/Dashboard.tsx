@@ -73,7 +73,7 @@ const MetricCard: React.FC<MetricCardProps> = ({ label, value, icon, sub, accent
           {icon}
         </div>
       </div>
-      <div className="font-headline text-3xl font-bold text-on-surface">
+      <div className="font-headline text-3xl font-bold text-on-surface dont-translate bhashini-skip-translation">
         {format(animated)}
       </div>
       {sub && <div className="flex items-center gap-1 text-[11px]">{sub}</div>}
@@ -409,7 +409,7 @@ export const Dashboard: React.FC = () => {
               </span>
             </div>
           ) : (
-            <div className="flex-1 h-[320px] w-full">
+            <div className="flex-1 h-[320px] w-full dont-translate bhashini-skip-translation">
               <ResponsiveContainer width="100%" height="100%">
                 <BarChart data={comparisonData} margin={{ top: 10, right: 10, left: -20, bottom: 20 }}>
                   <CartesianGrid vertical={false} stroke={comparisonColors.grid} />
@@ -509,7 +509,7 @@ export const Dashboard: React.FC = () => {
               </span>
             </div>
           ) : (
-            <div className="flex-1 h-[320px] w-full">
+            <div className="flex-1 h-[320px] w-full dont-translate bhashini-skip-translation">
               <ResponsiveContainer width="100%" height="100%">
                 <BarChart data={projectRiskData.series} margin={{ top: 10, right: 10, left: -20, bottom: 20 }}>
                   <CartesianGrid vertical={false} stroke={riskCardColors.project.grid} />
@@ -610,7 +610,7 @@ export const Dashboard: React.FC = () => {
               </span>
             </div>
           ) : (
-            <div className="flex-1 h-[320px] w-full">
+            <div className="flex-1 h-[320px] w-full dont-translate bhashini-skip-translation">
               <ResponsiveContainer width="100%" height="100%">
                 <BarChart data={poRiskData.series} margin={{ top: 10, right: 10, left: -20, bottom: 20 }}>
                   <CartesianGrid vertical={false} stroke={riskCardColors.po.grid} />
@@ -709,7 +709,7 @@ export const Dashboard: React.FC = () => {
               </span>
             </div>
           ) : (
-            <div className="flex-1 h-[320px] w-full">
+            <div className="flex-1 h-[320px] w-full dont-translate bhashini-skip-translation">
               <ResponsiveContainer width="100%" height="100%">
                 <BarChart data={invoiceRiskData.series} margin={{ top: 10, right: 10, left: -20, bottom: 20 }}>
                   <CartesianGrid vertical={false} stroke={riskCardColors.invoice.grid} />

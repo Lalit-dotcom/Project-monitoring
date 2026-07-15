@@ -17,6 +17,7 @@ import {
   getTaxInvoicesMissingIrnSql
 } from '../lib/riskFlags.js';
 import { drawPdfTable } from '../lib/pdfTable.js';
+import { parseFilters, buildProjectsQuery, buildPOsQuery, buildInvoicesQuery } from '../lib/reportsHelper.js';
 
 const router = Router();
 
@@ -2138,4 +2139,597 @@ router.get('/dashboard/pdf', async (req: Request, res: Response): Promise<void> 
   }
 });
 
+// REPORTS EXPORTS ENGINE
+const reportColumns: Record<string, { label: string; key: string; width: number }[]> = {
+  'project-summary': [
+    { label: 'Project Code', key: 'project_cd', width: 65 },
+    { label: 'Project Name', key: 'prj_nm', width: 110 },
+    { label: 'Customer', key: 'customer_name', width: 90 },
+    { label: 'Project Manager', key: 'prj_mgr_name', width: 90 },
+    { label: 'Budget', key: 'prj_budget_no', width: 70 },
+    { label: 'PO Value', key: 'po_amount', width: 70 },
+    { label: 'Invoiced', key: 'total_invoice_amount', width: 70 },
+    { label: 'Received', key: 'amount_received', width: 70 },
+    { label: 'Outstanding', key: 'outstanding', width: 70 },
+    { label: 'Status', key: 'payment_status', width: 58 }
+  ],
+  'purchase-orders': [
+    { label: 'PO Number', key: 'final_po_no', width: 90 },
+    { label: 'Project', key: 'project_no', width: 80 },
+    { label: 'Vendor', key: 'vendor_name', width: 140 },
+    { label: 'PO Date', key: 'po_date', width: 70 },
+    { label: 'Valid From', key: 'valid_from', width: 70 },
+    { label: 'Valid To', key: 'valid_to', width: 70 },
+    { label: 'Total Value', key: 'total', width: 80 },
+    { label: 'Approval Status', key: 'approval_status', width: 100 }
+  ],
+  'vendor-performance': [
+    { label: 'Vendor Name', key: 'vendor_name', width: 200 },
+    { label: 'Total PO Value', key: 'total_po_value', width: 100 },
+    { label: 'Total Invoiced', key: 'total_invoiced', width: 100 },
+    { label: 'Total Paid', key: 'total_paid', width: 100 },
+    { label: 'Outstanding', key: 'outstanding', width: 100 },
+    { label: 'Avg Delay (Days)', key: 'avg_payment_delay', width: 100 }
+  ],
+  'invoice-summary': [
+    { label: 'Invoice #', key: 'invoice_num', width: 90 },
+    { label: 'Project', key: 'project_no', width: 80 },
+    { label: 'Vendor', key: 'vendor_name', width: 140 },
+    { label: 'Invoice Date', key: 'invoice_date', width: 75 },
+    { label: 'Amount', key: 'invoice_amount', width: 80 },
+    { label: 'Paid', key: 'amount_paid', width: 80 },
+    { label: 'Unpaid', key: 'unpaid', width: 80 },
+    { label: 'Status', key: 'status', width: 65 },
+    { label: 'Aging Bucket', key: 'aging_bucket', width: 110 }
+  ],
+  'payment-status': [
+    { label: 'Payment Status', key: 'payment_status', width: 140 },
+    { label: 'Project Count', key: 'project_count', width: 80 },
+    { label: 'Total Budget', key: 'total_budget', width: 100 },
+    { label: 'Total PO Value', key: 'total_po_value', width: 100 },
+    { label: 'Total Invoiced', key: 'total_invoiced', width: 100 },
+    { label: 'Total Received', key: 'total_received', width: 100 },
+    { label: 'Total Outstanding', key: 'total_outstanding', width: 110 }
+  ],
+  'outstanding-analysis': [
+    { label: 'Invoice #', key: 'invoice_num', width: 95 },
+    { label: 'Project', key: 'project_no', width: 85 },
+    { label: 'Vendor', key: 'vendor_name', width: 140 },
+    { label: 'Invoice Date', key: 'invoice_date', width: 90 },
+    { label: 'Invoice Amount', key: 'invoice_amount', width: 90 },
+    { label: 'Paid', key: 'amount_paid', width: 90 },
+    { label: 'Outstanding', key: 'unpaid', width: 100 },
+    { label: 'Days Overdue', key: 'days_overdue', width: 90 }
+  ],
+  'customer-wise-projects': [
+    { label: 'Customer Name', key: 'customer_name', width: 300 },
+    { label: 'Project Count', key: 'project_count', width: 100 },
+    { label: 'Total Budget', key: 'total_budget', width: 110 },
+    { label: 'Total Received', key: 'total_received', width: 110 },
+    { label: 'Outstanding', key: 'outstanding', width: 120 }
+  ],
+  'pm-wise-projects': [
+    { label: 'Project Manager', key: 'prj_mgr_name', width: 200 },
+    { label: 'Project Count', key: 'project_count', width: 100 },
+    { label: 'Portfolio Value', key: 'portfolio_value', width: 120 },
+    { label: 'Total Invoices', key: 'total_invoices', width: 100 },
+    { label: 'On-time Invoices', key: 'on_time_invoices', width: 110 },
+    { label: 'Overdue Invoices', key: 'overdue_invoices', width: 110 }
+  ]
+};
+
+async function fetchReportData(type: string, filters: any): Promise<any> {
+  if (type === 'project-summary') {
+    const { sql, values } = buildProjectsQuery(filters);
+    const query = `
+      SELECT 
+        p.project_cd,
+        p.prj_nm,
+        p.customer_name,
+        pm.prj_mgr_name,
+        p.prj_budget_no,
+        p.po_amount,
+        p.total_invoice_amount,
+        p.amount_received,
+        COALESCE(p.total_invoice_amount, 0) - COALESCE(p.total_amount_paid, 0) as outstanding,
+        CASE
+          WHEN p.no_of_inv_billdesk = 0 AND p.total_invoice_amount = 0 THEN 'No Invoices Yet'
+          WHEN p.total_invoice_amount > 0 AND p.total_amount_paid >= p.total_invoice_amount THEN 'Fully Paid'
+          ELSE 'Partially Paid'
+        END as payment_status
+      FROM projects p
+      LEFT JOIN project_managers pm ON p.prj_mgr_id = pm.prj_mgr_id
+      ${sql}
+      ORDER BY p.project_cd ASC
+    `;
+    const result = await pool.query(query, values);
+    return result.rows;
+  }
+
+  if (type === 'financial-summary') {
+    const projQuery = buildProjectsQuery(filters);
+    const poQuery = buildPOsQuery(filters);
+    const invQuery = buildInvoicesQuery(filters);
+
+    const [projectsRes, poRes, invRes] = await Promise.all([
+      pool.query(`
+        SELECT p.id, p.project_cd, p.prj_nm, p.po_amount, p.prj_budget_no, p.amount_received, p.total_invoice_amount, p.total_amount_paid, p.created_on
+        FROM projects p
+        ${projQuery.sql}
+      `, projQuery.values),
+      pool.query(`
+        SELECT po.id, po.po_date, po.total, po.project_no
+        FROM purchase_orders po
+        JOIN projects p ON po.project_no = p.project_cd
+        ${poQuery.sql}
+      `, poQuery.values),
+      pool.query(`
+        SELECT inv.id, inv.invoice_date, inv.gl_date, inv.invoice_amount, inv.amount_paid, inv.unpaid, inv.objection, inv.project_no
+        FROM invoices inv
+        JOIN projects p ON inv.project_no = p.project_cd
+        ${invQuery.sql}
+      `, invQuery.values),
+    ]);
+
+    return {
+      projects: projectsRes.rows,
+      purchaseOrders: poRes.rows,
+      invoices: invRes.rows
+    };
+  }
+
+  if (type === 'purchase-orders') {
+    const { sql, values } = buildPOsQuery(filters);
+    const query = `
+      SELECT 
+        po.id,
+        po.final_po_no,
+        po.project_no,
+        po.vendor_name,
+        po.po_date,
+        po.valid_from,
+        po.valid_to,
+        po.total,
+        po.approval_status
+      FROM purchase_orders po
+      JOIN projects p ON po.project_no = p.project_cd
+      ${sql}
+      ORDER BY po.po_date DESC NULLS LAST
+    `;
+    const result = await pool.query(query, values);
+    return result.rows;
+  }
+
+  if (type === 'vendor-performance') {
+    const poQuery = buildPOsQuery(filters);
+    const invQuery = buildInvoicesQuery(filters);
+
+    const [poRes, invRes] = await Promise.all([
+      pool.query(`
+        SELECT po.vendor_name, SUM(po.total) as total_po_value 
+        FROM purchase_orders po
+        JOIN projects p ON po.project_no = p.project_cd
+        ${poQuery.sql}
+        GROUP BY po.vendor_name
+      `, poQuery.values),
+      pool.query(`
+        SELECT 
+          inv.vendor_name,
+          SUM(inv.invoice_amount) as total_invoiced,
+          SUM(inv.amount_paid) as total_paid,
+          SUM(inv.unpaid) as outstanding,
+          AVG(CASE WHEN inv.gl_date IS NOT NULL AND inv.invoice_date IS NOT NULL AND inv.amount_paid > 0 THEN (inv.gl_date - inv.invoice_date) ELSE NULL END) as avg_payment_delay
+        FROM invoices inv
+        JOIN projects p ON inv.project_no = p.project_cd
+        ${invQuery.sql}
+        GROUP BY inv.vendor_name
+      `, invQuery.values)
+    ]);
+
+    const vendorMap = new Map<string, any>();
+    for (const row of poRes.rows) {
+      const name = row.vendor_name;
+      if (!name) continue;
+      vendorMap.set(name, {
+        vendor_name: name,
+        total_po_value: Number(row.total_po_value || 0),
+        total_invoiced: 0,
+        total_paid: 0,
+        outstanding: 0,
+        avg_payment_delay: 0,
+      });
+    }
+    for (const row of invRes.rows) {
+      const name = row.vendor_name;
+      if (!name) continue;
+      if (!vendorMap.has(name)) {
+        vendorMap.set(name, {
+          vendor_name: name,
+          total_po_value: 0,
+          total_invoiced: Number(row.total_invoiced || 0),
+          total_paid: Number(row.total_paid || 0),
+          outstanding: Number(row.outstanding || 0),
+          avg_payment_delay: Math.round(Number(row.avg_payment_delay || 0)),
+        });
+      } else {
+        const existing = vendorMap.get(name);
+        existing.total_invoiced = Number(row.total_invoiced || 0);
+        existing.total_paid = Number(row.total_paid || 0);
+        existing.outstanding = Number(row.outstanding || 0);
+        existing.avg_payment_delay = Math.round(Number(row.avg_payment_delay || 0));
+      }
+    }
+    return Array.from(vendorMap.values()).sort((a, b) => a.vendor_name.localeCompare(b.vendor_name));
+  }
+
+  if (type === 'invoice-summary') {
+    const { sql, values } = buildInvoicesQuery(filters);
+    const query = `
+      SELECT 
+        inv.id,
+        inv.invoice_num,
+        inv.project_no,
+        inv.vendor_name,
+        inv.invoice_date,
+        inv.invoice_amount,
+        inv.amount_paid,
+        inv.unpaid,
+        CASE WHEN inv.unpaid = 0 THEN 'Paid' WHEN inv.amount_paid > 0 THEN 'Partially Paid' ELSE 'Unpaid' END as status,
+        CASE
+          WHEN (CURRENT_DATE - inv.invoice_date) <= 30 THEN 'Current (<= 30d)'
+          WHEN (CURRENT_DATE - inv.invoice_date) <= 60 THEN '30-60d'
+          WHEN (CURRENT_DATE - inv.invoice_date) <= 90 THEN '60-90d'
+          ELSE '90+d'
+        END as aging_bucket
+      FROM invoices inv
+      JOIN projects p ON inv.project_no = p.project_cd
+      ${sql}
+      ORDER BY inv.invoice_date DESC NULLS LAST
+    `;
+    const result = await pool.query(query, values);
+    return result.rows;
+  }
+
+  if (type === 'payment-status') {
+    const { sql, values } = buildProjectsQuery(filters);
+    const query = `
+      SELECT 
+        CASE
+          WHEN p.no_of_inv_billdesk = 0 AND p.total_invoice_amount = 0 THEN 'No Invoices Yet'
+          WHEN p.total_invoice_amount > 0 AND p.total_amount_paid >= p.total_invoice_amount THEN 'Fully Paid'
+          ELSE 'Partially Paid'
+        END as payment_status,
+        COUNT(*) as project_count,
+        SUM(p.prj_budget_no) as total_budget,
+        SUM(p.po_amount) as total_po_value,
+        SUM(p.total_invoice_amount) as total_invoiced,
+        SUM(p.total_amount_paid) as total_received,
+        SUM(p.total_invoice_amount - p.total_amount_paid) as total_outstanding
+      FROM projects p
+      ${sql}
+      GROUP BY payment_status
+      ORDER BY payment_status ASC
+    `;
+    const result = await pool.query(query, values);
+    return result.rows;
+  }
+
+  if (type === 'outstanding-analysis') {
+    const { sql, values } = buildInvoicesQuery(filters);
+    const whereClause = sql ? `${sql} AND inv.unpaid > 0` : 'WHERE inv.unpaid > 0';
+    const query = `
+      SELECT 
+        inv.id,
+        inv.invoice_num,
+        inv.project_no,
+        inv.vendor_name,
+        inv.invoice_date,
+        inv.gl_date,
+        inv.invoice_amount,
+        inv.amount_paid,
+        inv.unpaid,
+        (CURRENT_DATE - inv.invoice_date) as days_overdue
+      FROM invoices inv
+      JOIN projects p ON inv.project_no = p.project_cd
+      ${whereClause}
+      ORDER BY days_overdue DESC
+    `;
+    const result = await pool.query(query, values);
+    return result.rows;
+  }
+
+  if (type === 'customer-wise-projects') {
+    const { sql, values } = buildProjectsQuery(filters);
+    const query = `
+      SELECT 
+        p.customer_name,
+        COUNT(*) as project_count,
+        SUM(p.prj_budget_no) as total_budget,
+        SUM(p.amount_received) as total_received,
+        SUM(p.total_invoice_amount - p.total_amount_paid) as outstanding
+      FROM projects p
+      ${sql}
+      GROUP BY p.customer_name
+      ORDER BY p.customer_name ASC
+    `;
+    const result = await pool.query(query, values);
+    return result.rows;
+  }
+
+  if (type === 'pm-wise-projects') {
+    const { sql, values } = buildProjectsQuery(filters);
+    const query = `
+      SELECT 
+        pm.prj_mgr_name,
+        COUNT(DISTINCT p.id) as project_count,
+        COALESCE(SUM(p.prj_budget_no), 0) as portfolio_value,
+        COUNT(inv.id) as total_invoices,
+        COUNT(inv.id) FILTER (WHERE inv.unpaid = 0 OR inv.invoice_date >= CURRENT_DATE - INTERVAL '30 days') as on_time_invoices,
+        COUNT(inv.id) FILTER (WHERE inv.unpaid > 0 AND inv.invoice_date < CURRENT_DATE - INTERVAL '30 days') as overdue_invoices
+      FROM projects p
+      JOIN project_managers pm ON p.prj_mgr_id = pm.prj_mgr_id
+      LEFT JOIN invoices inv ON p.project_cd = inv.project_no
+      ${sql}
+      GROUP BY pm.prj_mgr_id, pm.prj_mgr_name
+      ORDER BY pm.prj_mgr_name ASC
+    `;
+    const result = await pool.query(query, values);
+    return result.rows;
+  }
+
+  throw new Error('Invalid report type');
+}
+
+function formatRowForSheet(row: any) {
+  const formatted = { ...row };
+  const currencyKeys = [
+    'prj_budget_no', 'po_amount', 'total_invoice_amount', 'amount_received', 'outstanding',
+    'total', 'total_po_value', 'total_invoiced', 'total_paid',
+    'total_budget', 'total_po_value', 'total_invoiced', 'total_received', 'total_outstanding',
+    'invoice_amount', 'amount_paid', 'unpaid', 'portfolio_value'
+  ];
+  for (const key of currencyKeys) {
+    if (formatted[key] !== undefined && formatted[key] !== null) {
+      formatted[key] = Number(formatted[key]);
+    }
+  }
+  return formatted;
+}
+
+function formatRowForPdf(row: any, type: string): any {
+  const formatted = { ...row };
+  
+  const currencyKeys = [
+    'prj_budget_no', 'po_amount', 'total_invoice_amount', 'amount_received', 'outstanding',
+    'total', 'total_po_value', 'total_invoiced', 'total_paid',
+    'total_budget', 'total_po_value', 'total_invoiced', 'total_received', 'total_outstanding',
+    'invoice_amount', 'amount_paid', 'unpaid', 'portfolio_value'
+  ];
+
+  for (const key of currencyKeys) {
+    if (formatted[key] !== undefined && formatted[key] !== null) {
+      formatted[key] = formatFullINR(Number(formatted[key]));
+    }
+  }
+
+  const dateKeys = ['po_date', 'valid_from', 'valid_to', 'invoice_date', 'gl_date'];
+  for (const key of dateKeys) {
+    if (formatted[key] instanceof Date) {
+      formatted[key] = formatted[key].toISOString().split('T')[0];
+    } else if (formatted[key]) {
+      formatted[key] = String(formatted[key]).split('T')[0];
+    }
+  }
+
+  return formatted;
+}
+
+// 1. Excel Report Export
+router.get('/reports/:type/excel', async (req: Request, res: Response): Promise<void> => {
+  try {
+    const authReq = req as AuthenticatedRequest;
+    const user = authReq.user;
+    const type = req.params.type as string;
+    const filters = parseFilters(req.query);
+
+    const data = await fetchReportData(type, filters);
+    const wb = xlsx.utils.book_new();
+
+    if (type === 'financial-summary') {
+      const { projects, purchaseOrders, invoices } = data;
+      
+      const wsProj = xlsx.utils.json_to_sheet(projects.map(formatRowForSheet));
+      xlsx.utils.book_append_sheet(wb, wsProj, 'Projects');
+
+      const wsPOs = xlsx.utils.json_to_sheet(purchaseOrders.map(formatRowForSheet));
+      xlsx.utils.book_append_sheet(wb, wsPOs, 'Purchase Orders');
+
+      const wsInvs = xlsx.utils.json_to_sheet(invoices.map(formatRowForSheet));
+      xlsx.utils.book_append_sheet(wb, wsInvs, 'Invoices');
+
+      const totalBudget = projects.reduce((sum: number, p: any) => sum + Number(p.prj_budget_no || 0), 0);
+      const totalInvoiced = projects.reduce((sum: number, p: any) => sum + Number(p.total_invoice_amount || 0), 0);
+      const unbilled = Math.max(0, totalBudget - totalInvoiced);
+      
+      const paidInvoices = invoices.filter((i: any) => i.invoice_date && i.gl_date && Number(i.amount_paid || 0) > 0);
+      const totalDays = paidInvoices.reduce((sum: number, i: any) => {
+        const start = new Date(i.invoice_date);
+        const end = new Date(i.gl_date);
+        return sum + Math.max(0, Math.ceil((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24)));
+      }, 0);
+      const avgCollection = paidInvoices.length > 0 ? Math.round(totalDays / paidInvoices.length) : 24;
+      const disputed = invoices.filter((i: any) => i.objection && i.objection !== '' && Number(i.unpaid || 0) > 0).length;
+
+      const wsInsights = xlsx.utils.json_to_sheet([
+        { Metric: 'Average Collection Time (Days)', Value: avgCollection },
+        { Metric: 'Unbilled Revenue', Value: unbilled },
+        { Metric: 'Disputed Invoices Alerts', Value: disputed }
+      ]);
+      xlsx.utils.book_append_sheet(wb, wsInsights, 'Insights');
+    } else {
+      const sheetRows = data.map(formatRowForSheet);
+      const ws = xlsx.utils.json_to_sheet(sheetRows);
+      xlsx.utils.book_append_sheet(wb, ws, 'Report Data');
+    }
+
+    const buffer = xlsx.write(wb, { type: 'buffer', bookType: 'xlsx' });
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.setHeader('Content-Disposition', `attachment; filename="report-${type}-${new Date().toISOString().split('T')[0]}.xlsx"`);
+    await logExport(req, `DOWNLOAD_REPORT_EXCEL_${type.toUpperCase().replace(/-/g, '_')}`, 'SUCCESS', { filters: req.query });
+    res.send(buffer);
+  } catch (error: any) {
+    const typeStr = req.params.type as string;
+    console.error(`Error exporting report ${typeStr} excel:`, error);
+    await logExport(req, `DOWNLOAD_REPORT_EXCEL_${typeStr.toUpperCase().replace(/-/g, '_')}`, 'FAILURE', { filters: req.query, error: error.message });
+    res.status(500).json({ error: 'Failed to generate Excel report' });
+  }
+});
+
+// 2. CSV Report Export
+router.get('/reports/:type/csv', async (req: Request, res: Response): Promise<void> => {
+  try {
+    const authReq = req as AuthenticatedRequest;
+    const user = authReq.user;
+    const type = req.params.type as string;
+    const filters = parseFilters(req.query);
+
+    const data = await fetchReportData(type, filters);
+    const wb = xlsx.utils.book_new();
+
+    if (type === 'financial-summary') {
+      const ws = xlsx.utils.json_to_sheet(data.projects.map(formatRowForSheet));
+      xlsx.utils.book_append_sheet(wb, ws, 'Financial Summary');
+    } else {
+      const sheetRows = data.map(formatRowForSheet);
+      const ws = xlsx.utils.json_to_sheet(sheetRows);
+      xlsx.utils.book_append_sheet(wb, ws, 'Report Data');
+    }
+
+    const buffer = xlsx.write(wb, { type: 'buffer', bookType: 'csv' });
+    res.setHeader('Content-Type', 'text/csv');
+    res.setHeader('Content-Disposition', `attachment; filename="report-${type}-${new Date().toISOString().split('T')[0]}.csv"`);
+    await logExport(req, `DOWNLOAD_REPORT_CSV_${type.toUpperCase().replace(/-/g, '_')}`, 'SUCCESS', { filters: req.query });
+    res.send(buffer);
+  } catch (error: any) {
+    const typeStr = req.params.type as string;
+    console.error(`Error exporting report ${typeStr} csv:`, error);
+    await logExport(req, `DOWNLOAD_REPORT_CSV_${typeStr.toUpperCase().replace(/-/g, '_')}`, 'FAILURE', { filters: req.query, error: error.message });
+    res.status(500).json({ error: 'Failed to generate CSV report' });
+  }
+});
+
+// 3. PDF Report Export
+router.get('/reports/:type/pdf', async (req: Request, res: Response): Promise<void> => {
+  try {
+    const authReq = req as AuthenticatedRequest;
+    const user = authReq.user;
+    const type = req.params.type as string;
+    const filters = parseFilters(req.query);
+
+    const data = await fetchReportData(type, filters);
+
+    const doc = new PDFDocument({ margin: 40, bufferPages: true, layout: 'landscape' });
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="report-${type}-${new Date().toISOString().split('T')[0]}.pdf"`);
+    doc.pipe(res);
+
+    // Header bar
+    doc.rect(40, 40, 762, 50).fill('#1B3E7A');
+    doc.fillColor('#FFFFFF')
+       .fontSize(14)
+       .font('Helvetica-Bold')
+       .text('National Informatics Centre Services Inc. (NICSI)', 55, 48);
+    
+    const title = type.split('-').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
+    doc.fontSize(10)
+       .font('Helvetica')
+       .text(`NPMS Reports Dashboard | ${title}`, 55, 68);
+
+    doc.fillColor('#000000').moveDown(3);
+
+    if (type === 'financial-summary') {
+      const { projects, purchaseOrders, invoices } = data;
+      
+      const totalBudget = projects.reduce((sum: number, p: any) => sum + Number(p.prj_budget_no || 0), 0);
+      const totalInvoiced = projects.reduce((sum: number, p: any) => sum + Number(p.total_invoice_amount || 0), 0);
+      const unbilled = Math.max(0, totalBudget - totalInvoiced);
+      
+      const paidInvoices = invoices.filter((i: any) => i.invoice_date && i.gl_date && Number(i.amount_paid || 0) > 0);
+      const totalDays = paidInvoices.reduce((sum: number, i: any) => {
+        const start = new Date(i.invoice_date);
+        const end = new Date(i.gl_date);
+        return sum + Math.max(0, Math.ceil((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24)));
+      }, 0);
+      const avgCollection = paidInvoices.length > 0 ? Math.round(totalDays / paidInvoices.length) : 24;
+      const disputed = invoices.filter((i: any) => i.objection && i.objection !== '' && Number(i.unpaid || 0) > 0).length;
+
+      doc.fontSize(10).font('Helvetica-Bold').text('Quick Insights', 40, 110);
+      const insightsCols = [
+        { label: 'Metric', key: 'metric', width: 400 },
+        { label: 'Value', key: 'value', width: 362 }
+      ];
+      const insightsRows = [
+        { metric: 'Average Collection Time (Days)', value: `${avgCollection} Days` },
+        { metric: 'Unbilled Revenue', value: formatFullINR(unbilled) },
+        { metric: 'Disputed Invoices Alerts', value: `${disputed} Alerts` }
+      ];
+      let nextY = drawPdfTable(doc, insightsCols, insightsRows, { startY: 125, margin: 40, landscape: true });
+
+      const topChannels = [...projects]
+        .sort((a, b) => (b.po_amount || 0) - (a.po_amount || 0))
+        .slice(0, 4)
+        .map(p => ({
+          prj_nm: p.prj_nm,
+          po_amount: formatFullINR(Number(p.po_amount || 0))
+        }));
+
+      doc.fillColor('#000000').fontSize(10).font('Helvetica-Bold').text('Top Revenue Channels', 40, nextY + 15);
+      const channelsCols = [
+        { label: 'Project Name', key: 'prj_nm', width: 500 },
+        { label: 'PO Value', key: 'po_amount', width: 262 }
+      ];
+      nextY = drawPdfTable(doc, channelsCols, topChannels, { startY: nextY + 30, margin: 40, landscape: true });
+
+    } else {
+      const cols = reportColumns[type];
+      if (!cols) {
+        throw new Error(`Columns definition not found for report type ${type}`);
+      }
+
+      const rows = data.map((row: any) => formatRowForPdf(row, type));
+      drawPdfTable(doc, cols, rows, { startY: 110, margin: 40, landscape: true });
+    }
+
+    const range = doc.bufferedPageRange();
+    const currentDate = new Date().toLocaleDateString('en-US', {
+      day: 'numeric',
+      month: 'short',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: true
+    });
+
+    for (let i = 0; i < range.count; i++) {
+      doc.switchToPage(i);
+      doc.fillColor('#9CA3AF')
+         .fontSize(7)
+         .font('Helvetica')
+         .text(`Report generated on ${currentDate} | Page ${i + 1} of ${range.count}`, 40, doc.page.height - 30, {
+           align: 'right',
+           width: doc.page.width - 80
+         });
+    }
+
+    await logExport(req, `DOWNLOAD_REPORT_PDF_${type.toUpperCase().replace(/-/g, '_')}`, 'SUCCESS', { filters: req.query });
+    doc.end();
+  } catch (error: any) {
+    const typeStr = req.params.type as string;
+    console.error(`Error exporting report ${typeStr} pdf:`, error);
+    await logExport(req, `DOWNLOAD_REPORT_PDF_${typeStr.toUpperCase().replace(/-/g, '_')}`, 'FAILURE', { filters: req.query, error: error.message });
+    res.status(500).json({ error: 'Failed to generate PDF report' });
+  }
+});
+
 export default router;
+

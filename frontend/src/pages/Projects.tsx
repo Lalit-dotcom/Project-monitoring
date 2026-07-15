@@ -25,90 +25,7 @@ import type { ProjectFilters } from '../lib/api';
 import type { Project, DatabaseProject } from '../types';
 import { Breadcrumbs } from '../components/Breadcrumbs';
 import { toast } from '../lib/toast';
-import { useCountUp } from '../hooks/useCountUp';
-
-/* ─── Compact Summary / KPI Card ─── */
-interface CompactStatCardProps {
-  label: string;
-  value: number;
-  bg: string;
-  labelColor: string;
-  numColor: string;
-  icon?: React.ReactNode;
-  loading?: boolean;
-  onClick?: (e: React.MouseEvent) => void;
-  onMouseEnter?: () => void;
-  onMouseLeave?: () => void;
-  onFocus?: () => void;
-  onBlur?: () => void;
-  tabIndex?: number;
-  children?: React.ReactNode;
-}
-
-const CompactStatCard: React.FC<CompactStatCardProps> = ({
-  label,
-  value,
-  bg,
-  labelColor,
-  numColor,
-  icon,
-  loading,
-  onClick,
-  onMouseEnter,
-  onMouseLeave,
-  onFocus,
-  onBlur,
-  tabIndex,
-  children,
-}) => {
-  const animatedValue = useCountUp(value);
-
-  if (loading) {
-    return (
-      <div
-        style={{ backgroundColor: bg }}
-        className="animate-pulse rounded-[12px] p-[12px] flex flex-col justify-between h-[88px] min-w-[160px] sm:min-w-[180px] flex-initial"
-      >
-        <div className="h-3.5 bg-black/10 rounded w-24"></div>
-        <div className="h-7 bg-black/15 rounded w-12"></div>
-      </div>
-    );
-  }
-
-  return (
-    <div
-      onClick={onClick}
-      onMouseEnter={onMouseEnter}
-      onMouseLeave={onMouseLeave}
-      onFocus={onFocus}
-      onBlur={onBlur}
-      tabIndex={tabIndex}
-      style={{ backgroundColor: bg }}
-      className={`rounded-[12px] p-[12px] flex flex-col justify-between relative select-none h-[88px] min-w-[160px] sm:min-w-[180px] flex-initial transition-all focus:outline-none focus:ring-2 focus:ring-primary/40 ${
-        onClick ? 'cursor-pointer' : ''
-      }`}
-    >
-      <div className="flex justify-between items-start">
-        <span
-          style={{ color: labelColor }}
-          className="font-headline text-[11px] font-semibold uppercase tracking-[0.04em] block mb-[10px] leading-tight"
-        >
-          {label}
-        </span>
-        {icon && <div style={{ color: labelColor }} className="shrink-0">{icon}</div>}
-      </div>
-
-      <div
-        style={{ color: numColor }}
-        className="font-headline text-[26px] font-medium leading-none"
-      >
-        {animatedValue}
-      </div>
-
-      {children}
-    </div>
-  );
-};
+import { CompactStatCard } from '../components/CompactStatCard';
 
 export const Projects: React.FC = () => {
   const { searchQuery, projectsRefreshTrigger } = useOutletContext<{ searchQuery: string; projectsRefreshTrigger?: number }>();
@@ -1382,7 +1299,7 @@ export const Projects: React.FC = () => {
                       aria-label={`View project ${p.projectCd}`}
                     >
                       {/* Pinned/Sticky First Column: Project Code */}
-                      <td className="sticky left-0 bg-surface border-r border-outline-variant/60 z-10 shadow-[2px_0_5px_rgba(0,0,0,0.03)] px-6 py-5 group-hover:bg-surface-container-low transition-colors">
+                      <td className="sticky left-0 bg-surface border-r border-outline-variant/60 z-10 shadow-[2px_0_5px_rgba(0,0,0,0.03)] px-6 py-5 group-hover:bg-surface-container-low transition-colors dont-translate bhashini-skip-translation">
                         <span 
                           className="font-bold text-primary group-hover:underline hover:text-primary-container"
                         >
@@ -1392,16 +1309,16 @@ export const Projects: React.FC = () => {
                       <td className="px-6 py-5 text-sm text-on-surface">
                         {renderTruncatedText(p.customerName, "max-w-[200px]")}
                       </td>
-                      <td className="px-6 py-5 text-right font-mono text-sm text-secondary">
+                      <td className="px-6 py-5 text-right font-mono text-sm text-secondary dont-translate bhashini-skip-translation">
                         {renderFallback(p.prjBudgetNo)}
                       </td>
-                      <td className="px-6 py-5 text-right font-mono text-sm text-secondary">
+                      <td className="px-6 py-5 text-right font-mono text-sm text-secondary dont-translate bhashini-skip-translation">
                         {renderFallback(p.projectAbp)}
                       </td>
-                      <td className="px-6 py-5 text-right font-semibold text-sm text-on-surface">
+                      <td className="px-6 py-5 text-right font-semibold text-sm text-on-surface dont-translate bhashini-skip-translation">
                         {formatFullINR(p.poAmount)}
                       </td>
-                      <td className="px-6 py-5 text-right text-sm text-on-surface font-semibold">
+                      <td className="px-6 py-5 text-right text-sm text-on-surface font-semibold dont-translate bhashini-skip-translation">
                         {formatFullINR(p.amountReceived)}
                       </td>
                       <td className="px-6 py-5">
@@ -1429,10 +1346,10 @@ export const Projects: React.FC = () => {
                       <td className="px-6 py-5 text-right text-sm text-on-surface">
                         {p.noOfInvBilldesk}
                       </td>
-                      <td className="px-6 py-5 text-right text-sm text-on-surface">
+                      <td className="px-6 py-5 text-right text-sm text-on-surface dont-translate bhashini-skip-translation">
                         {formatFullINR(p.totalInvoiceAmount)}
                       </td>
-                      <td className={`px-6 py-5 text-right font-bold text-sm ${
+                      <td className={`px-6 py-5 text-right font-bold text-sm dont-translate bhashini-skip-translation ${
                         p.paymentStatus === 'Fully Paid' 
                           ? 'text-status-success-text' 
                           : p.paymentStatus === 'Partially Paid' 
@@ -1444,7 +1361,7 @@ export const Projects: React.FC = () => {
                       <td className="px-6 py-5 text-right text-sm text-on-surface">
                         {p.noOfTaxInvoice}
                       </td>
-                      <td className="px-6 py-5 text-right text-sm text-on-surface">
+                      <td className="px-6 py-5 text-right text-sm text-on-surface dont-translate bhashini-skip-translation">
                         {formatFullINR(p.totalTaxInvoiceAmount)}
                       </td>
                       <td className="px-6 py-5 text-sm text-secondary whitespace-nowrap">
@@ -1516,7 +1433,7 @@ export const Projects: React.FC = () => {
                     {/* Top Row: Code and Payment Status Badge */}
                     <div className="flex justify-between items-start gap-2">
                       <span 
-                        className="font-mono text-[10px] font-bold text-secondary uppercase bg-surface-container-low px-2 py-0.5 rounded border border-outline-variant/60 hover:text-primary transition-colors"
+                        className="font-mono text-[10px] font-bold text-secondary uppercase bg-surface-container-low px-2 py-0.5 rounded border border-outline-variant/60 hover:text-primary transition-colors dont-translate bhashini-skip-translation"
                       >
                         {p.projectCd}
                       </span>
@@ -1553,13 +1470,13 @@ export const Projects: React.FC = () => {
                   <div className="grid grid-cols-3 gap-2 mt-2 py-3 bg-surface-container-lowest/50 rounded-lg px-3 border border-outline-variant/30 text-left">
                     <div>
                       <span className="text-[9px] font-bold text-secondary uppercase tracking-wider block leading-none mb-1">Budget</span>
-                      <span className="font-sans text-xs font-bold text-on-surface leading-none block">
+                      <span className="font-sans text-xs font-bold text-on-surface leading-none block dont-translate bhashini-skip-translation">
                         {formatINR(p.prjBudgetNo ?? 0, true)}
                       </span>
                     </div>
                     <div>
                       <span className="text-[9px] font-bold text-secondary uppercase tracking-wider block leading-none mb-1">PO Value</span>
-                      <span className="font-sans text-xs font-bold text-on-surface leading-none block">
+                      <span className="font-sans text-xs font-bold text-on-surface leading-none block dont-translate bhashini-skip-translation">
                         {formatINR(p.poAmount ?? 0, true)}
                       </span>
                     </div>

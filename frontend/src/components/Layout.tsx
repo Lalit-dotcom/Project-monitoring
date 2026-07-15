@@ -3,16 +3,15 @@ import { Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { Sidebar } from './Sidebar';
 import { Topbar } from './Topbar';
 import { AddProjectWizard } from './AddProjectWizard';
-import { Download, ChevronLeft } from 'lucide-react';
+import { ChevronLeft } from 'lucide-react';
 import { api } from '../lib/api';
 import { toast } from '../lib/toast';
-import type { Notification } from '../types';
+
 
 export const Layout: React.FC = () => {
   const location = useLocation();
   const navigate = useNavigate();
   const [searchQuery, setSearchQuery] = useState('');
-  const [notifications, setNotifications] = useState<Notification[]>([]);
   const [unreadCount, setUnreadCount] = useState(0);
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [isMobileOpen, setIsMobileOpen] = useState(false);
@@ -37,7 +36,6 @@ export const Layout: React.FC = () => {
   const loadNotifications = async () => {
     try {
       const result = await api.getNotifications({ pageSize: 50 });
-      setNotifications(result.data);
       setUnreadCount(result.unreadCount);
     } catch (err) {
       console.error(err);
@@ -61,6 +59,19 @@ export const Layout: React.FC = () => {
     setIsMobileOpen(false);
   }, [location.pathname]);
 
+  // Bhashini Translation Re-scan on route changes
+  useEffect(() => {
+    const preferredLanguage = localStorage.getItem('preferredLanguage');
+    if (preferredLanguage && preferredLanguage !== 'en') {
+      const timer = setTimeout(() => {
+        if (typeof (window as any).translateAllTextNodes === 'function') {
+          (window as any).translateAllTextNodes(preferredLanguage);
+        }
+      }, 100);
+      return () => clearTimeout(timer);
+    }
+  }, [location.pathname]);
+
   // Determine topbar parameters based on route
   let placeholder = "Search projects, invoices, or POs...";
   let action: React.ReactNode = null;
@@ -78,19 +89,7 @@ export const Layout: React.FC = () => {
     placeholder = "Search invoices in bill desk...";
     action = null;
   } else if (location.pathname === '/reports') {
-    placeholder = "Search report segments...";
-    action = (
-      <button
-        onClick={() => {
-          toast.info('Export PDF — coming soon');
-        }}
-        className="bg-[#111827] hover:bg-[#1f2937] text-white px-4 py-2 rounded-full font-headline text-sm font-semibold flex items-center gap-2 transition-colors shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#111827] focus-visible:ring-offset-1"
-        aria-label="Export report as PDF"
-      >
-        <Download className="w-4 h-4" aria-hidden="true" />
-        <span>Export PDF</span>
-      </button>
-    );
+    action = null;
   } else if (location.pathname === '/purchase-orders') {
     placeholder = "Search purchase orders...";
   } else if (location.pathname === '/invoices') {
@@ -154,6 +153,7 @@ export const Layout: React.FC = () => {
         isCollapsed={isCollapsed}
         onHamburgerClick={() => setIsMobileOpen(true)}
         backButton={backButton}
+        showSearch={location.pathname !== '/reports'}
       />
 
       {/* Main Content Layout — with route fade transition */}

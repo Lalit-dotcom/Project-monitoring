@@ -8,7 +8,6 @@ import {
   Check, 
   Mail, 
   FileText,
-  MapPin,
   AlertCircle,
   MoreVertical,
   ShoppingCart,
@@ -31,6 +30,8 @@ import { api } from '../lib/api';
 import type { Project, Invoice, PurchaseOrder, TaxInvoice, Activity, DatabaseProject } from '../types';
 import { Toast } from '../components/Toast';
 import { NoticeModal } from '../components/NoticeModal';
+import { CompactStatCard } from '../components/CompactStatCard';
+import { Breadcrumbs } from '../components/Breadcrumbs';
 
 type TabName = 'Overview' | 'Purchase Orders' | 'Invoices' | 'Tax Invoices' | 'Bill Desk' | 'Documents';
 
@@ -185,11 +186,102 @@ export const ProjectDetail: React.FC = () => {
   const poAmount = project.poAmount;
   const receivedAmount = project.amountPaid;
   const paidAmount = project.amountPaid;
-  const outstandingAmount = Math.max(0, poAmount - receivedAmount);
 
   const receivedPct = poAmount > 0 ? Math.round((receivedAmount / poAmount) * 100) : 0;
   const paidPct = poAmount > 0 ? Math.round((paidAmount / poAmount) * 100) : 0;
-  const outstandingPct = poAmount > 0 ? Math.round((outstandingAmount / poAmount) * 100) : 0;
+
+  // Aging buckets & Financial Health Calculation
+  let currentOverdue = 0;
+  let overdue30_60 = 0;
+  let overdue60_90 = 0;
+  let overdue90_plus = 0;
+  const todayForAging = new Date();
+
+  invoices.forEach((inv) => {
+    const unpaid = (inv.invoiceAmount || 0) - (inv.amountPaid || 0);
+    if (unpaid <= 0) return;
+
+    if (!inv.invoiceDate) {
+      currentOverdue += unpaid;
+      return;
+    }
+    const invDate = new Date(inv.invoiceDate);
+    const diffTime = Math.abs(todayForAging.getTime() - invDate.getTime());
+    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+
+    if (diffDays <= 30) {
+      currentOverdue += unpaid;
+    } else if (diffDays <= 60) {
+      overdue30_60 += unpaid;
+    } else if (diffDays <= 90) {
+      overdue60_90 += unpaid;
+    } else {
+      overdue90_plus += unpaid;
+    }
+  });
+
+  const totalInvoiced = invoices.reduce((sum, inv) => sum + (inv.invoiceAmount || 0), 0);
+  const totalBudget = project.prjBudgetNo || 0;
+  const normalizationBase = Math.max(totalInvoiced, totalBudget) || 1;
+  const totalPenalty = (currentOverdue * 0) + (overdue30_60 * 0.3) + (overdue60_90 * 0.6) + (overdue90_plus * 1.0);
+  
+  const computedHealth = Math.max(0, Math.min(100, 100 - (totalPenalty / normalizationBase) * 100));
+
+  // Determine Priority Level based on overdue/risk state
+  let computedPriority = 'Low';
+  const totalOverdue = overdue30_60 + overdue60_90 + overdue90_plus;
+  if (overdue90_plus > 0 || (totalOverdue / normalizationBase) > 0.2 || computedHealth < 60) {
+    computedPriority = 'High';
+  } else if (overdue30_60 > 0 || overdue60_90 > 0 || computedHealth < 85) {
+    computedPriority = 'Medium';
+  }
+
+  // Contract Duration Calculation
+  let earliestDate: Date | null = null;
+  let latestDate: Date | null = null;
+
+  for (const po of purchaseOrders) {
+    const startStr = po.validFrom || po.poDate;
+    const endStr = po.validTo;
+
+    if (startStr) {
+      const startDate = new Date(startStr);
+      if (!isNaN(startDate.getTime())) {
+        if (!earliestDate || startDate < earliestDate) {
+          earliestDate = startDate;
+        }
+      }
+    }
+
+    if (endStr) {
+      const endDate = new Date(endStr);
+      if (!isNaN(endDate.getTime())) {
+        if (!latestDate || endDate > latestDate) {
+          latestDate = endDate;
+        }
+      }
+    }
+  }
+
+  let computedDuration = 'Not yet determined';
+  if (earliestDate && latestDate && latestDate >= earliestDate) {
+    const diffYears = latestDate.getFullYear() - earliestDate.getFullYear();
+    const diffMonths = latestDate.getMonth() - earliestDate.getMonth();
+    const totalMonths = diffYears * 12 + diffMonths + 1;
+    const formatter = new Intl.DateTimeFormat('en-IN', { month: 'short', year: 'numeric' });
+    const startFormatted = formatter.format(earliestDate);
+    const endFormatted = formatter.format(latestDate);
+    computedDuration = `${totalMonths} Month${totalMonths > 1 ? 's' : ''} (${startFormatted} – ${endFormatted})`;
+  }
+
+  let healthMessage = 'Performance is within projected margins';
+  if (computedHealth >= 80) {
+    healthMessage = 'Performance is healthy and within projected margins';
+  } else if (computedHealth >= 50) {
+    healthMessage = 'Caution: Moderate overdue invoices present';
+  } else {
+    healthMessage = 'Critical: High overdue invoices, requires immediate action';
+  }
 
   // Derive activities dynamically from real database records (POs, Invoices, Tax Invoices)
   const getDerivedActivities = (): Activity[] => {
@@ -288,6 +380,14 @@ export const ProjectDetail: React.FC = () => {
         />
       )}
 
+      <Breadcrumbs 
+        crumbs={[
+          { label: 'Database', to: '/projects' },
+          { label: 'Projects', to: '/projects' },
+          { label: project.name }
+        ]} 
+      />
+
       {/* Header Block */}
       <div className="bg-surface-container-lowest border border-outline-variant rounded-md p-6 shadow-sm">
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
@@ -296,12 +396,12 @@ export const ProjectDetail: React.FC = () => {
               <span className="px-2.5 py-0.5 rounded-full bg-primary/10 text-primary font-headline font-bold text-[10px] tracking-wider uppercase">
                 Active Project
               </span>
-              <span className="text-secondary font-headline text-xs font-semibold">
+              <span className="text-secondary font-headline text-xs font-semibold dont-translate bhashini-skip-translation">
                 Project No: {project.id}
               </span>
             </div>
-            <h2 className="font-headline text-2xl font-bold text-on-surface">{project.name}</h2>
-            <p className="text-secondary font-sans text-sm max-w-2xl mt-1">{project.description}</p>
+            <h2 className="font-headline text-2xl font-bold text-on-surface">{project.client}</h2>
+            <p className="text-secondary font-sans text-sm max-w-2xl mt-1">Project Manager: {project.manager}</p>
           </div>
 
           {/* Header action buttons: Notice + Download */}
@@ -359,62 +459,86 @@ export const ProjectDetail: React.FC = () => {
       </div>
 
       {/* Stat Cards Grid */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-stack-md">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-stack-md">
+        {/* Budget */}
+        <CompactStatCard
+          label="Budget"
+          value={project.prjBudgetNo ?? 0}
+          bg="#B5D4F4"
+          labelColor="#0C447C"
+          numColor="#042C53"
+          icon={<Info className="w-3.5 h-3.5" />}
+          format={(val) => formatINR(val, false)}
+          className="p-5 border border-outline-variant/20 shadow-sm rounded-md h-auto font-sans"
+        >
+          <div className="mt-4 w-full bg-black/10 rounded-full h-1.5 overflow-hidden">
+            <div className="h-full rounded-full" style={{ width: '100%', backgroundColor: '#042C53' }}></div>
+          </div>
+        </CompactStatCard>
+
+        {/* Project ABP */}
+        <CompactStatCard
+          label="Project ABP"
+          value={project.projectAbp ?? 0}
+          bg="#E0D4FC"
+          labelColor="#4F3B90"
+          numColor="#322468"
+          icon={<Info className="w-3.5 h-3.5" />}
+          format={(val) => formatINR(val, false)}
+          className="p-5 border border-outline-variant/20 shadow-sm rounded-md h-auto font-sans"
+        >
+          <div className="mt-4 w-full bg-black/10 rounded-full h-1.5 overflow-hidden">
+            <div className="h-full rounded-full" style={{ width: '100%', backgroundColor: '#322468' }}></div>
+          </div>
+        </CompactStatCard>
+
         {/* PO Amount */}
-        <div className="bg-surface-container-lowest border border-outline-variant rounded-md p-5 group hover:border-primary transition-colors shadow-sm">
-          <div className="text-secondary font-headline text-xs font-semibold uppercase tracking-wider flex justify-between">
-            <span>PO Amount</span>
-            <Info className="w-3.5 h-3.5 text-outline" />
+        <CompactStatCard
+          label="PO Amount"
+          value={poAmount ?? 0}
+          bg="#D3D1C7"
+          labelColor="#444441"
+          numColor="#2C2C2A"
+          icon={<Info className="w-3.5 h-3.5" />}
+          format={(val) => formatINR(val, false)}
+          className="p-5 border border-outline-variant/20 shadow-sm rounded-md h-auto font-sans"
+        >
+          <div className="mt-4 w-full bg-black/10 rounded-full h-1.5 overflow-hidden">
+            <div className="h-full rounded-full" style={{ width: '100%', backgroundColor: '#2C2C2A' }}></div>
           </div>
-          <div className="mt-2 flex items-baseline gap-2">
-            <span className="font-headline text-3xl font-bold text-on-surface">{formatINR(poAmount, false)}</span>
-          </div>
-          <div className="mt-4 w-full bg-surface-container rounded-full h-1.5 overflow-hidden">
-            <div className="bg-primary h-full rounded-full" style={{ width: '100%' }}></div>
-          </div>
-        </div>
+        </CompactStatCard>
 
         {/* Received */}
-        <div className="bg-surface-container-lowest border border-outline-variant rounded-md p-5 group hover:border-primary transition-colors shadow-sm">
-          <div className="text-secondary font-headline text-xs font-semibold uppercase tracking-wider flex justify-between">
-            <span>Received</span>
-            <span className="text-primary text-[10px] font-bold">{receivedPct}%</span>
+        <CompactStatCard
+          label="Received"
+          value={receivedAmount ?? 0}
+          bg="#9FE1CB"
+          labelColor="#085041"
+          numColor="#04342C"
+          icon={<span className="text-[10px] font-bold" style={{ color: '#085041' }}>{receivedPct}%</span>}
+          format={(val) => formatINR(val, false)}
+          className="p-5 border border-outline-variant/20 shadow-sm rounded-md h-auto font-sans"
+        >
+          <div className="mt-4 w-full bg-black/10 rounded-full h-1.5 overflow-hidden">
+            <div className="h-full rounded-full" style={{ width: `${receivedPct}%`, backgroundColor: '#04342C' }}></div>
           </div>
-          <div className="mt-2 flex items-baseline gap-2">
-            <span className="font-headline text-3xl font-bold text-on-surface">{formatINR(receivedAmount, false)}</span>
-          </div>
-          <div className="mt-4 w-full bg-surface-container rounded-full h-1.5 overflow-hidden">
-            <div className="bg-primary-container h-full rounded-full" style={{ width: `${receivedPct}%` }}></div>
-          </div>
-        </div>
+        </CompactStatCard>
 
         {/* Paid */}
-        <div className="bg-surface-container-lowest border border-outline-variant rounded-md p-5 group hover:border-primary transition-colors shadow-sm">
-          <div className="text-secondary font-headline text-xs font-semibold uppercase tracking-wider flex justify-between">
-            <span>Paid</span>
-            <span className="text-primary text-[10px] font-bold">{paidPct}%</span>
+        <CompactStatCard
+          label="Paid"
+          value={paidAmount ?? 0}
+          bg="#F9E8B3"
+          labelColor="#7A610A"
+          numColor="#534204"
+          icon={<span className="text-[10px] font-bold" style={{ color: '#7A610A' }}>{paidPct}%</span>}
+          format={(val) => formatINR(val, false)}
+          className="p-5 border border-outline-variant/20 shadow-sm rounded-md h-auto font-sans"
+        >
+          <div className="mt-4 w-full bg-black/10 rounded-full h-1.5 overflow-hidden">
+            <div className="h-full rounded-full" style={{ width: `${paidPct}%`, backgroundColor: '#534204' }}></div>
           </div>
-          <div className="mt-2 flex items-baseline gap-2">
-            <span className="font-headline text-3xl font-bold text-on-surface">{formatINR(paidAmount, false)}</span>
-          </div>
-          <div className="mt-4 w-full bg-surface-container rounded-full h-1.5 overflow-hidden">
-            <div className="bg-primary/60 h-full rounded-full" style={{ width: `${paidPct}%` }}></div>
-          </div>
-        </div>
-
-        {/* Outstanding */}
-        <div className="bg-surface-container-lowest border border-outline-variant rounded-md p-5 group hover:border-primary transition-colors shadow-sm">
-          <div className="text-secondary font-headline text-xs font-semibold uppercase tracking-wider flex justify-between">
-            <span>Outstanding</span>
-            <span className="text-error text-[10px] font-bold">{outstandingPct}%</span>
-          </div>
-          <div className="mt-2 flex items-baseline gap-2 text-error">
-            <span className="font-headline text-3xl font-bold">{formatINR(outstandingAmount, false)}</span>
-          </div>
-          <div className="mt-4 w-full bg-surface-container rounded-full h-1.5 overflow-hidden">
-            <div className="bg-error-container-dark bg-error/40 h-full rounded-full" style={{ width: `${outstandingPct}%` }}></div>
-          </div>
-        </div>
+        </CompactStatCard>
       </div>
 
       {/* Main Double Column Section */}
@@ -497,12 +621,12 @@ export const ProjectDetail: React.FC = () => {
                                   <div className="w-8 h-8 rounded bg-primary/5 flex items-center justify-center text-primary">
                                     <FileText className="w-4 h-4" />
                                   </div>
-                                  <span className="font-headline text-sm font-semibold text-on-surface">{inv.invoiceNum || inv.id}</span>
+                                  <span className="font-headline text-sm font-semibold text-on-surface dont-translate bhashini-skip-translation">{inv.invoiceNum || inv.id}</span>
                                 </div>
                               </td>
                               <td className="px-6 py-4 text-secondary text-sm">{formatDate(inv.invoiceDate)}</td>
-                              <td className="px-6 py-4 text-secondary text-sm font-medium">{formatINR(inv.penAmt || 0, false)}</td>
-                              <td className="px-6 py-4 font-headline text-base font-bold text-on-surface">{formatINR(inv.invoiceAmount, false)}</td>
+                              <td className="px-6 py-4 text-secondary text-sm font-medium dont-translate bhashini-skip-translation">{formatINR(inv.penAmt || 0, false)}</td>
+                              <td className="px-6 py-4 font-headline text-base font-bold text-on-surface dont-translate bhashini-skip-translation">{formatINR(inv.invoiceAmount, false)}</td>
                               <td className="px-6 py-4">
                                 <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider border ${
                                   status === 'Paid' 
@@ -569,10 +693,10 @@ export const ProjectDetail: React.FC = () => {
                       ) : (
                         paginate(filteredPOs).map((po) => (
                           <tr key={po.id} className="hover:bg-surface transition-colors">
-                            <td className="px-6 py-4 font-headline text-sm font-semibold text-primary">{po.finalPoNo || po.id}</td>
+                            <td className="px-6 py-4 font-headline text-sm font-semibold text-primary dont-translate bhashini-skip-translation">{po.finalPoNo || po.id}</td>
                             <td className="px-6 py-4 text-secondary text-sm">{formatDate(po.poDate)}</td>
                             <td className="px-6 py-4 font-sans text-sm font-medium">{po.vendorName}</td>
-                            <td className="px-6 py-4 text-right font-headline text-base font-bold text-on-surface">{formatINR(po.total, false)}</td>
+                            <td className="px-6 py-4 text-right font-headline text-base font-bold text-on-surface dont-translate bhashini-skip-translation">{formatINR(po.total, false)}</td>
                             <td className="px-6 py-4">
                               <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-status-success-bg text-status-success-text font-bold text-[10px] border border-status-success-border uppercase">
                                 <span className="w-1.5 h-1.5 rounded-full bg-status-success-text" />
@@ -611,10 +735,10 @@ export const ProjectDetail: React.FC = () => {
                       ) : (
                         paginate(filteredTxs).map((tx) => (
                           <tr key={tx.id} className="hover:bg-surface transition-colors">
-                            <td className="px-6 py-4 font-headline text-sm font-semibold text-primary">{tx.userBillNo || tx.id}</td>
+                            <td className="px-6 py-4 font-headline text-sm font-semibold text-primary dont-translate bhashini-skip-translation">{tx.userBillNo || tx.id}</td>
                             <td className="px-6 py-4 text-secondary text-sm">{formatDate(tx.billDate)}</td>
-                            <td className="px-6 py-4 font-sans text-sm text-secondary">{tx.poNo}</td>
-                            <td className="px-6 py-4 text-right font-headline text-base font-bold text-on-surface">{formatINR(tx.totalAmount, false)}</td>
+                            <td className="px-6 py-4 font-sans text-sm text-secondary dont-translate bhashini-skip-translation">{tx.poNo}</td>
+                            <td className="px-6 py-4 text-right font-headline text-base font-bold text-on-surface dont-translate bhashini-skip-translation">{formatINR(tx.totalAmount, false)}</td>
                             <td className="px-6 py-4">
                               <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider border ${
                                 tx.billStatus === 'FINAL' ? 'bg-status-success-bg text-status-success-text border-status-success-border' : 'bg-status-warning-bg text-status-warning-text border-status-warning-border'
@@ -686,7 +810,7 @@ export const ProjectDetail: React.FC = () => {
                     </div>
 
                     {/* Bar chart */}
-                    <div className="h-[220px] w-full">
+                    <div className="h-[220px] w-full dont-translate bhashini-skip-translation">
                       <ResponsiveContainer width="100%" height="100%">
                         <ComposedChart data={chartData} margin={{ top: 8, right: 16, left: 8, bottom: 4 }} barCategoryGap="35%">
                           <CartesianGrid vertical={false} stroke={barColors.grid} />
@@ -729,10 +853,6 @@ export const ProjectDetail: React.FC = () => {
 
                     {/* Scope text + metadata grid */}
                     <div className="space-y-4 pt-4 border-t border-outline-variant">
-                      <div>
-                        <h4 className="font-headline text-sm font-bold text-on-surface mb-1">Detailed Scope</h4>
-                        <p className="text-secondary text-sm leading-relaxed">{project.description}</p>
-                      </div>
                       <div className="grid grid-cols-2 gap-4">
                         <div>
                           <span className="text-xs text-secondary font-bold font-headline uppercase block">Client Entity</span>
@@ -843,44 +963,28 @@ export const ProjectDetail: React.FC = () => {
         {/* Right Section: Sidebar Metadata & Health */}
         <div className="space-y-stack-lg">
           
-          {/* Map Site Card */}
-          <div className="bg-surface-container-lowest border border-outline-variant rounded-md p-1 shadow-sm overflow-hidden">
-            <div className="h-40 w-full relative">
-              <img 
-                className="w-full h-full object-cover rounded-t-md" 
-                alt={`Delhi NCR Map representing ${project.name}`} 
-                src="https://lh3.googleusercontent.com/aida-public/AB6AXuAOLsaZb0wPCb7KWsyVRdKioWDin1-O7q4GJLIJt4y1F_7ZouKS9m5lYmsB0FiYcrarG8klCYuJzNd9uBa9JOT8trEIdjrvUmmL3LfUZ1c60-E4PBXWcA8wdzm4ohHQMQYGgHBG1kKszJTZne4vc44OhlIG3pQXRoXooFu1YzuXDQz_9YfX8-On-WQwbvxwUFbEPxT94rkzYjg2iPdK5mfMbGS22KVRDHQfLSJTDeYCQI4qqH6LGwSotI4UNAO0adfZW5ZSbf9t4nKc" 
-              />
-              <div className="absolute inset-0 bg-gradient-to-t from-black/50 to-transparent flex items-end p-4">
-                <div className="flex items-center gap-2 text-white">
-                  <MapPin className="w-4 h-4" />
-                  <span className="text-[10px] font-bold uppercase tracking-wider">Project Site: {project.location}</span>
-                </div>
-              </div>
+          {/* Project Details block */}
+          <div className="bg-surface-container-lowest border border-outline-variant rounded-md p-6 shadow-sm font-sans space-y-4">
+            <h3 className="font-headline text-base font-bold text-on-surface mb-2">Project Details</h3>
+            <div className="flex justify-between items-center pb-3 border-b border-outline-variant">
+              <span className="text-secondary text-sm">Contract Duration</span>
+              <span className="font-bold text-sm text-on-surface">{computedDuration}</span>
             </div>
-            
-            {/* Project Specs */}
-            <div className="p-5 space-y-4 font-sans">
-              <div className="flex justify-between items-center pb-3 border-b border-outline-variant">
-                <span className="text-secondary text-sm">Contract Duration</span>
-                <span className="font-bold text-sm text-on-surface">{project.duration}</span>
-              </div>
-              <div className="flex justify-between items-center pb-3 border-b border-outline-variant">
-                <span className="text-secondary text-sm">Project Manager</span>
-                <span className="font-bold text-sm text-on-surface">{project.manager}</span>
-              </div>
-              <div className="flex justify-between items-center">
-                <span className="text-secondary text-sm">Priority Level</span>
-                <span className={`px-2.5 py-0.5 rounded-full font-bold text-[10px] uppercase border ${
-                  project.priority === 'High' 
-                    ? 'bg-red-50 text-red-700 border-red-200' 
-                    : project.priority === 'Medium' 
-                    ? 'bg-amber-50 text-amber-700 border-amber-200' 
-                    : 'bg-secondary/10 text-secondary border-outline-variant'
-                }`}>
-                  {project.priority} Priority
-                </span>
-              </div>
+            <div className="flex justify-between items-center pb-3 border-b border-outline-variant">
+              <span className="text-secondary text-sm">Project Manager</span>
+              <span className="font-bold text-sm text-on-surface">{project.manager}</span>
+            </div>
+            <div className="flex justify-between items-center">
+              <span className="text-secondary text-sm">Priority Level</span>
+              <span className={`px-2.5 py-0.5 rounded-full font-bold text-[10px] uppercase border ${
+                computedPriority === 'High' 
+                  ? 'bg-red-50 text-red-700 border-red-200' 
+                  : computedPriority === 'Medium' 
+                  ? 'bg-amber-50 text-amber-700 border-amber-200' 
+                  : 'bg-secondary/10 text-secondary border-outline-variant'
+              }`}>
+                {computedPriority} Priority
+              </span>
             </div>
           </div>
 
@@ -888,11 +992,11 @@ export const ProjectDetail: React.FC = () => {
           <div className="bg-primary p-6 rounded-md text-white relative overflow-hidden group shadow-sm">
             <div className="relative z-10">
               <h4 className="font-headline text-base font-bold">Financial Health</h4>
-              <p className="text-xs opacity-80 mt-1 font-sans">Performance is within projected margins</p>
+              <p className="text-xs opacity-80 mt-1 font-sans">{healthMessage}</p>
               <div className="mt-6">
-                <span className="text-4xl font-headline font-bold">{project.healthScore.toFixed(1)}%</span>
+                <span className="text-4xl font-headline font-bold">{computedHealth.toFixed(1)}%</span>
                 <div className="mt-3 w-full bg-white/20 h-2 rounded-full overflow-hidden">
-                  <div className="bg-white h-full rounded-full" style={{ width: `${project.healthScore}%` }}></div>
+                  <div className="bg-white h-full rounded-full" style={{ width: `${computedHealth}%` }}></div>
                 </div>
               </div>
             </div>

@@ -5,10 +5,20 @@ import { api } from '../lib/api';
 import type { Notification } from '../types';
 
 export const Notifications: React.FC = () => {
-  const { reloadNotifications } = useOutletContext<{ reloadNotifications: () => void }>();
+  const { reloadNotifications, searchQuery } = useOutletContext<{ reloadNotifications: () => void; searchQuery: string }>();
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [unreadCount, setUnreadCount] = useState(0);
   const [loading, setLoading] = useState(true);
+
+  // Client-side filter driven by the navbar search bar
+  const q = (searchQuery || '').toLowerCase();
+  const filteredNotifications = q
+    ? notifications.filter(
+        (n) =>
+          n.title.toLowerCase().includes(q) ||
+          (n.description || '').toLowerCase().includes(q)
+      )
+    : notifications;
 
   const loadNotifications = async () => {
     try {
@@ -96,8 +106,13 @@ export const Notifications: React.FC = () => {
             <Bell className="w-8 h-8 opacity-40 text-secondary" />
             <span>All caught up! You have no notifications.</span>
           </div>
+        ) : filteredNotifications.length === 0 ? (
+          <div className="p-12 text-center text-secondary font-headline flex flex-col items-center gap-3">
+            <Bell className="w-8 h-8 opacity-40 text-secondary" />
+            <span>No notifications match your search.</span>
+          </div>
         ) : (
-          notifications.map((n) => (
+          filteredNotifications.map((n) => (
             <div 
               key={n.id} 
               onClick={() => { if (!n.read) handleMarkAsRead(n.id); }}

@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { useSearchParams, useNavigate } from 'react-router-dom';
+import { useSearchParams, useNavigate, useOutletContext } from 'react-router-dom';
 import { MoreVertical, AlertCircle, Search, X, Filter, AlertTriangle, Download, Loader2 } from 'lucide-react';
 import { api } from '../lib/api';
 import type { PurchaseOrder } from '../types';
@@ -11,6 +11,7 @@ import { toast } from '../lib/toast';
 export const PurchaseOrders: React.FC = () => {
   const [searchParams, setSearchParams] = useSearchParams();
   const navigate = useNavigate();
+  const { searchQuery } = useOutletContext<{ searchQuery: string }>();
 
   // Parse filters from URL
   const search = searchParams.get('search') || '';
@@ -122,6 +123,11 @@ export const PurchaseOrders: React.FC = () => {
   useEffect(() => {
     setSearchVal(search);
   }, [search]);
+
+  // Sync navbar search into local searchVal (which debounces into updateFilters)
+  useEffect(() => {
+    if (searchQuery !== undefined) setSearchVal(searchQuery);
+  }, [searchQuery]);
 
   useEffect(() => {
     setLocalMinTotal(minTotal);
@@ -854,10 +860,10 @@ export const PurchaseOrders: React.FC = () => {
                     className="group hover:bg-surface-container-low transition-colors cursor-pointer animate-row-stagger" 
                     style={{ animationDelay: `${Math.min(i * 20, 400)}ms` }}
                   >
-                    <td className="sticky left-0 bg-surface-container-lowest group-hover:bg-surface-container-low transition-colors duration-150 z-10 border-r border-outline-variant px-6 py-4 font-headline text-sm font-bold text-primary">
+                    <td className="sticky left-0 bg-surface-container-lowest group-hover:bg-surface-container-low transition-colors duration-150 z-10 border-r border-outline-variant px-6 py-4 font-headline text-sm font-bold text-primary dont-translate bhashini-skip-translation">
                       {renderFallback(po.finalPoNo)}
                     </td>
-                    <td className="px-6 py-4">
+                    <td className="px-6 py-4 dont-translate bhashini-skip-translation">
                       <span className="text-primary font-semibold font-sans text-sm">
                         {po.projectNo}
                       </span>
@@ -874,7 +880,7 @@ export const PurchaseOrders: React.FC = () => {
                     <td className="px-6 py-4 font-sans text-sm text-secondary">
                       {formatDate(po.validTo)}
                     </td>
-                    <td className="px-6 py-4 text-right font-headline text-base font-bold text-on-surface">
+                    <td className="px-6 py-4 text-right font-headline text-base font-bold text-on-surface dont-translate bhashini-skip-translation">
                       {formatINR(po.total, false)}
                     </td>
                     <td className="px-6 py-4">

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { Search, Bell, Sun, Moon, Menu, X } from 'lucide-react';
 import { useTheme } from '../context/ThemeContext';
@@ -13,6 +13,8 @@ interface TopbarProps {
   /** Called when the hamburger button is clicked (mobile) */
   onHamburgerClick?: () => void;
   backButton?: React.ReactNode;
+  /** When false, hides the search input entirely (desktop + mobile). Defaults to true. */
+  showSearch?: boolean;
 }
 
 export const Topbar: React.FC<TopbarProps> = ({
@@ -24,9 +26,32 @@ export const Topbar: React.FC<TopbarProps> = ({
   isCollapsed = false,
   onHamburgerClick,
   backButton,
+  showSearch = true,
 }) => {
   const { theme, toggleTheme } = useTheme();
   const [mobileSearchOpen, setMobileSearchOpen] = useState(false);
+
+  useEffect(() => {
+    const moveWidget = () => {
+      const widget = document.getElementById('bhashini-translation');
+      const container = document.getElementById('bhashini-custom-container');
+      if (widget && container) {
+        container.appendChild(widget);
+        return true;
+      }
+      return false;
+    };
+
+    if (moveWidget()) return;
+
+    const interval = setInterval(() => {
+      if (moveWidget()) {
+        clearInterval(interval);
+      }
+    }, 100);
+
+    return () => clearInterval(interval);
+  }, []);
 
   return (
     <header
@@ -51,8 +76,8 @@ export const Topbar: React.FC<TopbarProps> = ({
         </div>
       )}
 
-      {/* Search Input — hidden on mobile (collapsed to icon) */}
-      {!mobileSearchOpen && (
+      {/* Search Input — hidden on mobile (collapsed to icon). Not rendered when showSearch=false. */}
+      {showSearch && !mobileSearchOpen && (
         <div className="hidden md:flex flex-1 max-w-md">
           <div className="relative w-full">
             <Search className="w-4 h-4 text-outline absolute left-3 top-1/2 -translate-y-1/2" aria-hidden="true" />
@@ -68,8 +93,8 @@ export const Topbar: React.FC<TopbarProps> = ({
         </div>
       )}
 
-      {/* Mobile full-width search overlay */}
-      {mobileSearchOpen && (
+      {/* Mobile full-width search overlay. Not rendered when showSearch=false. */}
+      {showSearch && mobileSearchOpen && (
         <div className="flex flex-1 items-center gap-2 md:hidden">
           <div className="relative flex-1">
             <Search className="w-4 h-4 text-outline absolute left-3 top-1/2 -translate-y-1/2" aria-hidden="true" />
@@ -95,8 +120,8 @@ export const Topbar: React.FC<TopbarProps> = ({
 
       {/* Right Side Actions */}
       <div className="flex items-center gap-3 md:gap-6 ml-auto">
-        {/* Mobile: search icon (hidden when search open) */}
-        {!mobileSearchOpen && (
+        {/* Mobile: search icon (hidden when search open or showSearch=false) */}
+        {showSearch && !mobileSearchOpen && (
           <button
             onClick={() => setMobileSearchOpen(true)}
             className="md:hidden p-2 rounded-md text-secondary hover:text-primary hover:bg-surface-container transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
@@ -107,6 +132,8 @@ export const Topbar: React.FC<TopbarProps> = ({
         )}
 
         <div className="flex items-center gap-3 md:gap-4">
+          <div id="bhashini-custom-container" className="flex items-center shrink-0" />
+
           <button
             onClick={toggleTheme}
             className="text-secondary hover:text-primary transition-all duration-150 p-1 hover:bg-surface-container rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"

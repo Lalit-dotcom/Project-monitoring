@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Shield, Key, Settings, UserPlus, MoreVertical } from 'lucide-react';
+import { useOutletContext } from 'react-router-dom';
 import { api } from '../lib/api';
 import type { User } from '../types';
 
@@ -9,6 +10,17 @@ export const Administration: React.FC = () => {
   const [users, setUsers] = useState<User[]>([]);
   const [loading, setLoading] = useState(true);
   const [activeSection, setActiveSection] = useState<SectionType>('Users');
+  const { searchQuery } = useOutletContext<{ searchQuery: string }>();
+
+  // Client-side filter for the Users table
+  const q = (searchQuery || '').toLowerCase();
+  const filteredUsers = q
+    ? users.filter(
+        (u) =>
+          u.name.toLowerCase().includes(q) ||
+          (u.email || '').toLowerCase().includes(q)
+      )
+    : users;
 
   useEffect(() => {
     const loadUsers = async () => {
@@ -109,7 +121,13 @@ export const Administration: React.FC = () => {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-outline-variant">
-                    {users.map((user) => (
+                    {filteredUsers.length === 0 ? (
+                      <tr>
+                        <td colSpan={5} className="px-6 py-10 text-center text-secondary text-sm">
+                          No users match your search.
+                        </td>
+                      </tr>
+                    ) : filteredUsers.map((user) => (
                       <tr key={user.id} className="hover:bg-surface transition-colors">
                         <td className="px-6 py-4">
                           <div className="flex items-center gap-3">

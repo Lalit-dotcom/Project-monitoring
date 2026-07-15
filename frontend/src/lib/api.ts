@@ -84,25 +84,6 @@ const fetchWithAuth = async (url: string, options: RequestInit = {}): Promise<Re
 };
 
 
-// Mapping helper to map database format (camelCase) to UI expected format
-const getStateName = (cd: string): string => {
-  const code = cd.slice(-2).toUpperCase();
-  const states: Record<string, string> = {
-    ND: 'New Delhi',
-    GJ: 'Gujarat',
-    TS: 'Telangana',
-    UP: 'Uttar Pradesh',
-    MH: 'Maharashtra',
-    PB: 'Punjab',
-    WB: 'West Bengal',
-    AP: 'Andhra Pradesh',
-    HR: 'Haryana',
-    MP: 'Madhya Pradesh',
-    DL: 'Delhi',
-  };
-  return states[code] || 'Regional Office';
-};
-
 const mapDbProjectToProject = (dbProj: DatabaseProject): Project & DatabaseProject => {
   return {
     ...dbProj,
@@ -117,9 +98,9 @@ const mapDbProjectToProject = (dbProj: DatabaseProject): Project & DatabaseProje
     amountPaid: dbProj.totalAmountPaid || 0,
     taxInvoiceAmount: dbProj.totalTaxInvoiceAmount || 0,
     description: dbProj.prjNm,
-    location: getStateName(dbProj.projectCd),
+    location: '',
     duration: '18 Months',
-    manager: dbProj.prjMgrId ? `PM-${dbProj.prjMgrId}` : 'Regional Manager',
+    manager: dbProj.prjMgrName || 'Unassigned',
     priority: (dbProj.poAmount || 0) > 1000000 ? 'High' : (dbProj.poAmount || 0) > 200000 ? 'Medium' : 'Low',
     healthScore: 100,
     amountReceived: dbProj.amountReceived || 0,
@@ -172,14 +153,7 @@ const initStorage = () => {
 initStorage();
 
 // Typed helper functions to read and write to local storage
-const getStorageItem = <T>(key: string): T[] => {
-  const item = localStorage.getItem(key);
-  return item ? JSON.parse(item) : [];
-};
-
-const setStorageItem = <T>(key: string, data: T[]): void => {
-  localStorage.setItem(key, JSON.stringify(data));
-};
+// (Unused helper functions removed)
 
 export interface ProjectFilters {
   search?: string;
@@ -900,7 +874,7 @@ export const api = {
     search?: string;
     page?: number;
     pageSize?: number;
-  }): Promise<{ data: any[]; count: number }> => {
+  }): Promise<{ data: any[]; count: number; summary?: any }> => {
     const qParams = new URLSearchParams();
     if (params.category) qParams.set('category', params.category);
     if (params.status) qParams.set('status', params.status);
@@ -923,6 +897,68 @@ export const api = {
    * Send a project notice email (vendor bills or client funds) via the backend.
    * The server re-fetches the project data from DB before building the email.
    */
+  getReportFilters: async (): Promise<any> => {
+    const res = await fetchWithAuth(`${API_URL}/api/reports/filters`);
+    if (!res.ok) {
+      throw new Error('Failed to fetch report filter values');
+    }
+    return res.json();
+  },
+
+  getReportData: async (type: string, filters?: any): Promise<any> => {
+    const url = new URL(`${API_URL}/api/reports/${type}`);
+    if (filters) {
+      Object.entries(filters).forEach(([key, val]) => {
+        if (val !== undefined && val !== null && val !== '') {
+          url.searchParams.append(key, String(val));
+        }
+      });
+    }
+    const res = await fetchWithAuth(url.toString());
+    if (!res.ok) {
+      throw new Error(`Failed to fetch report data for ${type}`);
+    }
+    return res.json();
+  },
+
+  exportReportFile: async (type: string, format: 'csv' | 'excel' | 'pdf', filters?: any): Promise<void> => {
+    try {
+      const queryParams = new URLSearchParams();
+      if (filters) {
+        Object.entries(filters).forEach(([key, val]) => {
+          if (val !== undefined && val !== null && val !== '') {
+            queryParams.append(key, String(val));
+          }
+        });
+      }
+      const res = await fetchWithAuth(`${API_URL}/api/exports/reports/${type}/${format}?${queryParams.toString()}`);
+      if (!res.ok) {
+        throw new Error(`Server returned ${res.status}: ${res.statusText}`);
+      }
+      const blob = await res.blob();
+      const contentDisposition = res.headers.get('Content-Disposition');
+      const ext = format === 'excel' ? 'xlsx' : format === 'csv' ? 'csv' : 'pdf';
+      let filename = `report-${type}.${ext}`;
+      if (contentDisposition) {
+        const matches = /filename="([^"]+)"/.exec(contentDisposition);
+        if (matches && matches[1]) {
+          filename = matches[1];
+        }
+      }
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.URL.revokeObjectURL(url);
+    } catch (err: any) {
+      toast.error('Export failed', err.message || 'An error occurred during file export.');
+      throw err;
+    }
+  },
+
   sendNotice: async (
     projectId: string,
     noticeType: 'vendor_pending_bills' | 'client_pending_funds',

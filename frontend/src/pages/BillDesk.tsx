@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Link, useSearchParams } from 'react-router-dom';
+import { Link, useSearchParams, useOutletContext } from 'react-router-dom';
 import { MoreVertical, AlertCircle, AlertTriangle, Search, X, Filter, Download, Loader2 } from 'lucide-react';
 import { api } from '../lib/api';
 import type { BillDeskRecord } from '../types';
@@ -10,6 +10,7 @@ import { toast } from '../lib/toast';
 
 export const BillDesk: React.FC = () => {
   const [searchParams, setSearchParams] = useSearchParams();
+  const { searchQuery } = useOutletContext<{ searchQuery: string }>();
 
   // Parse filters from URL
   const search = searchParams.get('search') || '';
@@ -120,6 +121,11 @@ export const BillDesk: React.FC = () => {
   useEffect(() => {
     setSearchVal(search);
   }, [search]);
+
+  // Sync navbar search into local searchVal (which debounces into updateFilters)
+  useEffect(() => {
+    if (searchQuery !== undefined) setSearchVal(searchQuery);
+  }, [searchQuery]);
 
   useEffect(() => {
     setLocalMinAmount(minAmount);
@@ -788,10 +794,10 @@ export const BillDesk: React.FC = () => {
               ) : (
                 paginatedBills.map((b, i) => (
                   <tr key={b.id} className="group hover:bg-surface-container-low transition-colors animate-row-stagger" style={{ animationDelay: `${Math.min(i * 20, 400)}ms` }}>
-                    <td className="sticky left-0 bg-surface-container-lowest group-hover:bg-surface-container-low transition-colors duration-150 z-10 border-r border-outline-variant px-6 py-4 font-headline text-sm font-bold text-on-surface">
+                    <td className="sticky left-0 bg-surface-container-lowest group-hover:bg-surface-container-low transition-colors duration-150 z-10 border-r border-outline-variant px-6 py-4 font-headline text-sm font-bold text-on-surface dont-translate bhashini-skip-translation">
                       {renderFallback(b.invoiceNo)}
                     </td>
-                    <td className="px-6 py-4">
+                    <td className="px-6 py-4 dont-translate bhashini-skip-translation">
                       <Link to={`/projects?projectNo=${b.projectNo}`} className="hover:underline text-primary font-semibold font-sans text-sm">
                         {b.projectNo}
                       </Link>
@@ -808,10 +814,10 @@ export const BillDesk: React.FC = () => {
                     <td className="px-6 py-4 font-sans text-sm text-secondary">
                       {formatDate(b.receivedDate)}
                     </td>
-                    <td className="px-6 py-4 text-right font-headline text-base font-bold text-on-surface">
+                    <td className="px-6 py-4 text-right font-headline text-base font-bold text-on-surface dont-translate bhashini-skip-translation">
                       {formatINR(b.invoiceAmount, false)}
                     </td>
-                    <td className="px-6 py-4 text-right font-headline text-base font-bold text-on-surface">
+                    <td className="px-6 py-4 text-right font-headline text-base font-bold text-on-surface dont-translate bhashini-skip-translation">
                       {formatINR(b.amountPaid, false)}
                     </td>
                     <td className="px-6 py-4">
