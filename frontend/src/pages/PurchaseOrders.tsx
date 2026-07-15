@@ -449,7 +449,7 @@ export const PurchaseOrders: React.FC = () => {
         </div>
         
         {/* Header Actions: Filter + Download buttons */}
-        <div className="flex items-center gap-3 self-end md:self-center shrink-0">
+        <div className="flex flex-wrap items-center gap-3 self-end md:self-center shrink-0">
           <button 
             ref={filterButtonRef}
             onClick={() => { setShowFilterPopover(!showFilterPopover); setShowExportPopover(false); }}
@@ -609,19 +609,19 @@ export const PurchaseOrders: React.FC = () => {
                 {/* Timeline */}
                 <div className="space-y-3">
                   <span className="text-xs font-bold text-secondary uppercase tracking-wider block">Issued Timeline</span>
-                  <div className="flex items-center gap-2">
+                  <div className="flex flex-wrap items-center gap-2">
                     <input 
                       type="date" 
                       value={localPoDateFrom}
                       onChange={(e) => setLocalPoDateFrom(e.target.value)}
-                      className="h-9 rounded border border-outline-variant text-xs px-2 outline-none text-on-surface w-full"
+                      className="h-9 rounded border border-outline-variant text-xs px-2 outline-none text-on-surface min-w-[120px] flex-1"
                     />
                     <span className="text-secondary text-xs">to</span>
                     <input 
                       type="date" 
                       value={localPoDateTo}
                       onChange={(e) => setLocalPoDateTo(e.target.value)}
-                      className="h-9 rounded border border-outline-variant text-xs px-2 outline-none text-on-surface w-full"
+                      className="h-9 rounded border border-outline-variant text-xs px-2 outline-none text-on-surface min-w-[120px] flex-1"
                     />
                   </div>
                 </div>
@@ -797,12 +797,12 @@ export const PurchaseOrders: React.FC = () => {
           </div>
         )}
         <div className="max-h-[calc(100vh-280px)] overflow-auto w-full">
-          <table className="w-full text-left border-collapse min-w-[1100px] table-sticky-header">
+          <table className="w-full text-left border-separate border-spacing-0 min-w-[1100px] table-sticky-header purchase-orders-table-separate">
             <thead>
               <tr className="bg-surface-container-low border-b border-outline-variant select-none">
                 <th 
                   onClick={() => handleSort('final_po_no')}
-                  className="sticky left-0 bg-surface-container-low z-20 border-r border-outline-variant px-6 py-4 font-headline text-xs font-bold text-secondary uppercase tracking-wider cursor-pointer hover:bg-surface-container-high transition-colors"
+                  className="sticky left-0 bg-surface-container-low z-20 border-r border-outline-variant px-6 py-4 font-headline text-xs font-bold text-secondary uppercase tracking-wider cursor-pointer hover:bg-surface-container-high transition-colors sticky-corner"
                 >
                   PO Number {sortBy === 'final_po_no' && (sortOrder === 'asc' ? '↑' : '↓')}
                 </th>

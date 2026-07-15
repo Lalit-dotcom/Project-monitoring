@@ -428,7 +428,7 @@ export const BillDesk: React.FC = () => {
         </div>
         
         {/* Header Actions: Filter + Download buttons */}
-        <div className="flex items-center gap-3 self-end md:self-center shrink-0">
+        <div className="flex flex-wrap items-center gap-3 self-end md:self-center shrink-0">
           <button 
             ref={filterButtonRef}
             onClick={() => { setShowFilterPopover(!showFilterPopover); setShowExportPopover(false); }}
@@ -588,36 +588,36 @@ export const BillDesk: React.FC = () => {
               <div className="space-y-3">
                 <span className="text-xs font-bold text-secondary uppercase tracking-wider block">Date Ranges</span>
                 <div className="space-y-2">
-                  <div className="flex items-center gap-2">
+                  <div className="flex flex-wrap items-center gap-2">
                     <span className="text-secondary text-[10px] w-8">Inv:</span>
                     <input 
                       type="date" 
                       value={localInvoiceDateFrom}
                       onChange={(e) => setLocalInvoiceDateFrom(e.target.value)}
-                      className="h-8 rounded border border-outline-variant text-[11px] px-1 outline-none text-on-surface"
+                      className="h-8 rounded border border-outline-variant text-[11px] px-1 outline-none text-on-surface min-w-[100px] flex-1"
                     />
                     <span className="text-secondary text-[10px]">-</span>
                     <input 
                       type="date" 
                       value={localInvoiceDateTo}
                       onChange={(e) => setLocalInvoiceDateTo(e.target.value)}
-                      className="h-8 rounded border border-outline-variant text-[11px] px-1 outline-none text-on-surface"
+                      className="h-8 rounded border border-outline-variant text-[11px] px-1 outline-none text-on-surface min-w-[100px] flex-1"
                     />
                   </div>
-                  <div className="flex items-center gap-2">
+                  <div className="flex flex-wrap items-center gap-2">
                     <span className="text-secondary text-[10px] w-8">Recv:</span>
                     <input 
                       type="date" 
                       value={localReceivedDateFrom}
                       onChange={(e) => setLocalReceivedDateFrom(e.target.value)}
-                      className="h-8 rounded border border-outline-variant text-[11px] px-1 outline-none text-on-surface"
+                      className="h-8 rounded border border-outline-variant text-[11px] px-1 outline-none text-on-surface min-w-[100px] flex-1"
                     />
                     <span className="text-secondary text-[10px]">-</span>
                     <input 
                       type="date" 
                       value={localReceivedDateTo}
                       onChange={(e) => setLocalReceivedDateTo(e.target.value)}
-                      className="h-8 rounded border border-outline-variant text-[11px] px-1 outline-none text-on-surface"
+                      className="h-8 rounded border border-outline-variant text-[11px] px-1 outline-none text-on-surface min-w-[100px] flex-1"
                     />
                   </div>
                 </div>
@@ -730,10 +730,10 @@ export const BillDesk: React.FC = () => {
           </div>
         )}
         <div className="overflow-auto max-h-[calc(100vh-280px)] w-full">
-          <table className="w-full text-left border-collapse min-w-[1500px] table-sticky-header">
+          <table className="w-full text-left border-separate border-spacing-0 min-w-[1500px] table-sticky-header billdesk-table-separate">
             <thead>
               <tr className="bg-surface-container-low border-b border-outline-variant select-none">
-                <th className="sticky left-0 bg-surface-container-low z-25 border-r border-outline-variant px-6 py-4 font-headline text-xs font-bold text-secondary uppercase tracking-wider">Invoice No</th>
+                <th className="sticky left-0 bg-surface-container-low z-25 border-r border-outline-variant px-6 py-4 font-headline text-xs font-bold text-secondary uppercase tracking-wider sticky-corner">Invoice No</th>
                 <th className="px-6 py-4 font-headline text-xs font-bold text-secondary uppercase tracking-wider">Project</th>
                 <th className="px-6 py-4 font-headline text-xs font-bold text-secondary uppercase tracking-wider">Vendor</th>
                 <th className="px-6 py-4 font-headline text-xs font-bold text-secondary uppercase tracking-wider">Bill Month</th>

@@ -417,7 +417,7 @@ export const TaxInvoices: React.FC = () => {
         </div>
         
         {/* Header Actions: Filter + Download buttons */}
-        <div className="flex items-center gap-3 self-end md:self-center shrink-0">
+        <div className="flex flex-wrap items-center gap-3 self-end md:self-center shrink-0">
           <button 
             ref={filterButtonRef}
             onClick={() => { setShowFilterPopover(!showFilterPopover); setShowExportPopover(false); }}
@@ -577,19 +577,19 @@ export const TaxInvoices: React.FC = () => {
                 {/* Timeline */}
                 <div className="space-y-3">
                   <span className="text-xs font-bold text-secondary uppercase tracking-wider block">Bill Date Range</span>
-                  <div className="flex items-center gap-2">
+                  <div className="flex flex-wrap items-center gap-2">
                     <input 
                       type="date" 
                       value={localBillDateFrom}
                       onChange={(e) => setLocalBillDateFrom(e.target.value)}
-                      className="h-9 rounded border border-outline-variant text-xs px-2 outline-none text-on-surface"
+                      className="h-9 rounded border border-outline-variant text-xs px-2 outline-none text-on-surface min-w-[120px] flex-1"
                     />
                     <span className="text-secondary text-xs">to</span>
                     <input 
                       type="date" 
                       value={localBillDateTo}
                       onChange={(e) => setLocalBillDateTo(e.target.value)}
-                      className="h-9 rounded border border-outline-variant text-xs px-2 outline-none text-on-surface"
+                      className="h-9 rounded border border-outline-variant text-xs px-2 outline-none text-on-surface min-w-[120px] flex-1"
                     />
                   </div>
                 </div>
@@ -723,10 +723,10 @@ export const TaxInvoices: React.FC = () => {
           </div>
         )}
         <div className="overflow-auto max-h-[calc(100vh-280px)] w-full">
-          <table className="w-full text-left border-collapse min-w-[1300px] table-sticky-header">
+          <table className="w-full text-left border-separate border-spacing-0 min-w-[1300px] table-sticky-header taxinvoices-table-separate">
             <thead>
               <tr className="bg-surface-container-low border-b border-outline-variant select-none">
-                <th className="sticky left-0 bg-surface-container-low z-20 border-r border-outline-variant px-6 py-4 font-headline text-xs font-bold text-secondary uppercase tracking-wider">Bill No</th>
+                <th className="sticky left-0 bg-surface-container-low z-20 border-r border-outline-variant px-6 py-4 font-headline text-xs font-bold text-secondary uppercase tracking-wider sticky-corner">Bill No</th>
                 <th className="px-6 py-4 font-headline text-xs font-bold text-secondary uppercase tracking-wider">Project</th>
                 <th className="px-6 py-4 font-headline text-xs font-bold text-secondary uppercase tracking-wider">GSTIN</th>
                 <th 

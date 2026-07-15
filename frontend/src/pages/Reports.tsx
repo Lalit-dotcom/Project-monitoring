@@ -763,11 +763,11 @@ export const Reports: React.FC = () => {
             {activeTab === 'project-summary' && (
               <div className="bg-surface border border-outline-variant rounded-xl shadow-sm overflow-hidden flex flex-col">
                 <div className="overflow-auto max-h-[calc(100vh-280px)] w-full">
-                  <table className="w-full text-left border-collapse table-sticky-header text-xs font-sans min-w-[1600px]">
+                  <table className="w-full text-left border-separate border-spacing-0 table-sticky-header text-xs font-sans min-w-[1600px] reports-table-separate">
                     <thead>
                       <tr className="bg-surface-container-low border-b border-outline-variant font-headline text-[10px] font-bold text-secondary uppercase tracking-wider">
                         {/* Pinned Leftmost Column: Project Code */}
-                        <th className="sticky left-0 bg-surface-container-low border-r border-outline-variant/60 z-20 shadow-[2px_0_5px_rgba(0,0,0,0.03)] px-6 py-4 cursor-pointer hover:bg-surface-container-high" style={{ position: 'sticky', left: 0, zIndex: 20, backgroundColor: 'var(--color-surface-container-low)' }} onClick={() => handleSort('project_cd')}>Project Code {sortBy === 'project_cd' && (sortOrder === 'asc' ? '↑' : '↓')}</th>
+                        <th className="sticky left-0 bg-surface-container-low border-r border-outline-variant/60 z-20 shadow-[2px_0_5px_rgba(0,0,0,0.03)] px-6 py-4 cursor-pointer hover:bg-surface-container-high sticky-corner" style={{ position: 'sticky', left: 0, zIndex: 20, backgroundColor: 'var(--color-surface-container-low)' }} onClick={() => handleSort('project_cd')}>Project Code {sortBy === 'project_cd' && (sortOrder === 'asc' ? '↑' : '↓')}</th>
                         <th className="px-6 py-4 cursor-pointer hover:bg-surface-container-high" onClick={() => handleSort('prj_nm')}>Project Name {sortBy === 'prj_nm' && (sortOrder === 'asc' ? '↑' : '↓')}</th>
                         <th className="px-6 py-4 cursor-pointer hover:bg-surface-container-high" onClick={() => handleSort('customer_name')}>Customer {sortBy === 'customer_name' && (sortOrder === 'asc' ? '↑' : '↓')}</th>
                         <th className="px-6 py-4 cursor-pointer hover:bg-surface-container-high" onClick={() => handleSort('prj_mgr_name')}>PM {sortBy === 'prj_mgr_name' && (sortOrder === 'asc' ? '↑' : '↓')}</th>
@@ -986,11 +986,11 @@ export const Reports: React.FC = () => {
             {activeTab === 'purchase-orders' && (
               <div className="bg-surface border border-outline-variant rounded-xl shadow-sm overflow-hidden flex flex-col">
                 <div className="overflow-auto max-h-[calc(100vh-280px)] w-full">
-                  <table className="w-full text-left border-collapse table-sticky-header text-xs font-sans min-w-[1500px]">
+                  <table className="w-full text-left border-separate border-spacing-0 table-sticky-header text-xs font-sans min-w-[1500px] reports-table-separate">
                     <thead>
                       <tr className="bg-surface-container-low border-b border-outline-variant font-headline text-[10px] font-bold text-secondary uppercase tracking-wider">
                         {/* Pinned leftmost: PO Number */}
-                        <th className="sticky left-0 bg-surface-container-low border-r border-outline-variant/60 z-20 shadow-[2px_0_5px_rgba(0,0,0,0.03)] px-6 py-4 cursor-pointer hover:bg-surface-container-high" style={{ position: 'sticky', left: 0, zIndex: 20, backgroundColor: 'var(--color-surface-container-low)' }} onClick={() => handleSort('final_po_no')}>PO Number {sortBy === 'final_po_no' && (sortOrder === 'asc' ? '↑' : '↓')}</th>
+                        <th className="sticky left-0 bg-surface-container-low border-r border-outline-variant/60 z-20 shadow-[2px_0_5px_rgba(0,0,0,0.03)] px-6 py-4 cursor-pointer hover:bg-surface-container-high sticky-corner" style={{ position: 'sticky', left: 0, zIndex: 20, backgroundColor: 'var(--color-surface-container-low)' }} onClick={() => handleSort('final_po_no')}>PO Number {sortBy === 'final_po_no' && (sortOrder === 'asc' ? '↑' : '↓')}</th>
                         <th className="px-6 py-4 cursor-pointer hover:bg-surface-container-high" onClick={() => handleSort('project_no')}>Project {sortBy === 'project_no' && (sortOrder === 'asc' ? '↑' : '↓')}</th>
                         <th className="px-6 py-4 cursor-pointer hover:bg-surface-container-high" onClick={() => handleSort('vendor_name')}>Vendor {sortBy === 'vendor_name' && (sortOrder === 'asc' ? '↑' : '↓')}</th>
                         <th className="px-6 py-4 cursor-pointer hover:bg-surface-container-high" onClick={() => handleSort('po_date')}>PO Date {sortBy === 'po_date' && (sortOrder === 'asc' ? '↑' : '↓')}</th>
@@ -1034,11 +1034,11 @@ export const Reports: React.FC = () => {
             {activeTab === 'vendor-performance' && (
               <div className="bg-surface border border-outline-variant rounded-xl shadow-sm overflow-hidden flex flex-col">
                 <div className="overflow-auto max-h-[calc(100vh-280px)] w-full">
-                  <table className="w-full text-left border-collapse table-sticky-header text-xs font-sans min-w-[1200px]">
+                  <table className="w-full text-left border-separate border-spacing-0 table-sticky-header text-xs font-sans min-w-[1200px] reports-table-separate">
                     <thead>
                       <tr className="bg-surface-container-low border-b border-outline-variant font-headline text-[10px] font-bold text-secondary uppercase tracking-wider">
                         {/* Pinned leftmost: Vendor Name */}
-                        <th className="sticky left-0 bg-surface-container-low border-r border-outline-variant/60 z-20 shadow-[2px_0_5px_rgba(0,0,0,0.03)] px-6 py-4 cursor-pointer hover:bg-surface-container-high" style={{ position: 'sticky', left: 0, zIndex: 20, backgroundColor: 'var(--color-surface-container-low)' }} onClick={() => handleSort('vendor_name')}>Vendor Name {sortBy === 'vendor_name' && (sortOrder === 'asc' ? '↑' : '↓')}</th>
+                        <th className="sticky left-0 bg-surface-container-low border-r border-outline-variant/60 z-20 shadow-[2px_0_5px_rgba(0,0,0,0.03)] px-6 py-4 cursor-pointer hover:bg-surface-container-high sticky-corner" style={{ position: 'sticky', left: 0, zIndex: 20, backgroundColor: 'var(--color-surface-container-low)' }} onClick={() => handleSort('vendor_name')}>Vendor Name {sortBy === 'vendor_name' && (sortOrder === 'asc' ? '↑' : '↓')}</th>
                         <th className="px-6 py-4 cursor-pointer hover:bg-surface-container-high text-right" onClick={() => handleSort('total_po_value')}>Total PO Value {sortBy === 'total_po_value' && (sortOrder === 'asc' ? '↑' : '↓')}</th>
                         <th className="px-6 py-4 cursor-pointer hover:bg-surface-container-high text-right" onClick={() => handleSort('total_invoiced')}>Total Invoiced {sortBy === 'total_invoiced' && (sortOrder === 'asc' ? '↑' : '↓')}</th>
                         <th className="px-6 py-4 cursor-pointer hover:bg-surface-container-high text-right" onClick={() => handleSort('total_paid')}>Total Paid {sortBy === 'total_paid' && (sortOrder === 'asc' ? '↑' : '↓')}</th>
@@ -1068,11 +1068,11 @@ export const Reports: React.FC = () => {
             {activeTab === 'invoice-summary' && (
               <div className="bg-surface border border-outline-variant rounded-xl shadow-sm overflow-hidden flex flex-col">
                 <div className="overflow-auto max-h-[calc(100vh-280px)] w-full">
-                  <table className="w-full text-left border-collapse table-sticky-header text-xs font-sans min-w-[1600px]">
+                  <table className="w-full text-left border-separate border-spacing-0 table-sticky-header text-xs font-sans min-w-[1600px] reports-table-separate">
                     <thead>
                       <tr className="bg-surface-container-low border-b border-outline-variant font-headline text-[10px] font-bold text-secondary uppercase tracking-wider">
                         {/* Pinned leftmost: Invoice # */}
-                        <th className="sticky left-0 bg-surface-container-low border-r border-outline-variant/60 z-20 shadow-[2px_0_5px_rgba(0,0,0,0.03)] px-6 py-4 cursor-pointer hover:bg-surface-container-high" style={{ position: 'sticky', left: 0, zIndex: 20, backgroundColor: 'var(--color-surface-container-low)' }} onClick={() => handleSort('invoice_num')}>Invoice # {sortBy === 'invoice_num' && (sortOrder === 'asc' ? '↑' : '↓')}</th>
+                        <th className="sticky left-0 bg-surface-container-low border-r border-outline-variant/60 z-20 shadow-[2px_0_5px_rgba(0,0,0,0.03)] px-6 py-4 cursor-pointer hover:bg-surface-container-high sticky-corner" style={{ position: 'sticky', left: 0, zIndex: 20, backgroundColor: 'var(--color-surface-container-low)' }} onClick={() => handleSort('invoice_num')}>Invoice # {sortBy === 'invoice_num' && (sortOrder === 'asc' ? '↑' : '↓')}</th>
                         <th className="px-6 py-4 cursor-pointer hover:bg-surface-container-high" onClick={() => handleSort('project_no')}>Project {sortBy === 'project_no' && (sortOrder === 'asc' ? '↑' : '↓')}</th>
                         <th className="px-6 py-4 cursor-pointer hover:bg-surface-container-high" onClick={() => handleSort('vendor_name')}>Vendor {sortBy === 'vendor_name' && (sortOrder === 'asc' ? '↑' : '↓')}</th>
                         <th className="px-6 py-4 cursor-pointer hover:bg-surface-container-high" onClick={() => handleSort('invoice_date')}>Invoice Date {sortBy === 'invoice_date' && (sortOrder === 'asc' ? '↑' : '↓')}</th>
@@ -1118,11 +1118,11 @@ export const Reports: React.FC = () => {
             {activeTab === 'payment-status' && (
               <div className="bg-surface border border-outline-variant rounded-xl shadow-sm overflow-hidden flex flex-col">
                 <div className="overflow-auto max-h-[calc(100vh-280px)] w-full">
-                  <table className="w-full text-left border-collapse table-sticky-header text-xs font-sans min-w-[1200px]">
+                  <table className="w-full text-left border-separate border-spacing-0 table-sticky-header text-xs font-sans min-w-[1200px] reports-table-separate">
                     <thead>
                       <tr className="bg-surface-container-low border-b border-outline-variant font-headline text-[10px] font-bold text-secondary uppercase tracking-wider">
                         {/* Pinned leftmost: Payment Status */}
-                        <th className="sticky left-0 bg-surface-container-low border-r border-outline-variant/60 z-20 shadow-[2px_0_5px_rgba(0,0,0,0.03)] px-6 py-4 cursor-pointer hover:bg-surface-container-high" style={{ position: 'sticky', left: 0, zIndex: 20, backgroundColor: 'var(--color-surface-container-low)' }} onClick={() => handleSort('payment_status')}>Payment Status Bucket {sortBy === 'payment_status' && (sortOrder === 'asc' ? '↑' : '↓')}</th>
+                        <th className="sticky left-0 bg-surface-container-low border-r border-outline-variant/60 z-20 shadow-[2px_0_5px_rgba(0,0,0,0.03)] px-6 py-4 cursor-pointer hover:bg-surface-container-high sticky-corner" style={{ position: 'sticky', left: 0, zIndex: 20, backgroundColor: 'var(--color-surface-container-low)' }} onClick={() => handleSort('payment_status')}>Payment Status Bucket {sortBy === 'payment_status' && (sortOrder === 'asc' ? '↑' : '↓')}</th>
                         <th className="px-6 py-4 cursor-pointer hover:bg-surface-container-high text-right" onClick={() => handleSort('project_count')}>Project Count {sortBy === 'project_count' && (sortOrder === 'asc' ? '↑' : '↓')}</th>
                         <th className="px-6 py-4 cursor-pointer hover:bg-surface-container-high text-right" onClick={() => handleSort('total_budget')}>Total Budget {sortBy === 'total_budget' && (sortOrder === 'asc' ? '↑' : '↓')}</th>
                         <th className="px-6 py-4 cursor-pointer hover:bg-surface-container-high text-right" onClick={() => handleSort('total_po_value')}>Total PO Value {sortBy === 'total_po_value' && (sortOrder === 'asc' ? '↑' : '↓')}</th>
@@ -1164,11 +1164,11 @@ export const Reports: React.FC = () => {
             {activeTab === 'outstanding-analysis' && (
               <div className="bg-surface border border-outline-variant rounded-xl shadow-sm overflow-hidden flex flex-col">
                 <div className="overflow-auto max-h-[calc(100vh-280px)] w-full">
-                  <table className="w-full text-left border-collapse table-sticky-header text-xs font-sans min-w-[1500px]">
+                  <table className="w-full text-left border-separate border-spacing-0 table-sticky-header text-xs font-sans min-w-[1500px] reports-table-separate">
                     <thead>
                       <tr className="bg-surface-container-low border-b border-outline-variant font-headline text-[10px] font-bold text-secondary uppercase tracking-wider">
                         {/* Pinned leftmost: Invoice # */}
-                        <th className="sticky left-0 bg-surface-container-low border-r border-outline-variant/60 z-20 shadow-[2px_0_5px_rgba(0,0,0,0.03)] px-6 py-4 cursor-pointer hover:bg-surface-container-high" style={{ position: 'sticky', left: 0, zIndex: 20, backgroundColor: 'var(--color-surface-container-low)' }} onClick={() => handleSort('invoice_num')}>Invoice # {sortBy === 'invoice_num' && (sortOrder === 'asc' ? '↑' : '↓')}</th>
+                        <th className="sticky left-0 bg-surface-container-low border-r border-outline-variant/60 z-20 shadow-[2px_0_5px_rgba(0,0,0,0.03)] px-6 py-4 cursor-pointer hover:bg-surface-container-high sticky-corner" style={{ position: 'sticky', left: 0, zIndex: 20, backgroundColor: 'var(--color-surface-container-low)' }} onClick={() => handleSort('invoice_num')}>Invoice # {sortBy === 'invoice_num' && (sortOrder === 'asc' ? '↑' : '↓')}</th>
                         <th className="px-6 py-4 cursor-pointer hover:bg-surface-container-high" onClick={() => handleSort('project_no')}>Project {sortBy === 'project_no' && (sortOrder === 'asc' ? '↑' : '↓')}</th>
                         <th className="px-6 py-4 cursor-pointer hover:bg-surface-container-high" onClick={() => handleSort('vendor_name')}>Vendor {sortBy === 'vendor_name' && (sortOrder === 'asc' ? '↑' : '↓')}</th>
                         <th className="px-6 py-4 cursor-pointer hover:bg-surface-container-high" onClick={() => handleSort('invoice_date')}>Invoice Date {sortBy === 'invoice_date' && (sortOrder === 'asc' ? '↑' : '↓')}</th>
@@ -1212,10 +1212,10 @@ export const Reports: React.FC = () => {
             {activeTab === 'customer-wise-projects' && (
               <div className="border border-outline-variant rounded-xl overflow-hidden shadow-sm bg-surface">
                 <div className="overflow-auto max-h-[calc(100vh-280px)] w-full">
-                  <table className="w-full text-left border-collapse table-sticky-header text-xs font-sans min-w-[800px]">
+                  <table className="w-full text-left border-separate border-spacing-0 table-sticky-header text-xs font-sans min-w-[800px] reports-table-separate">
                     <thead>
                       <tr className="bg-surface-container-low border-b border-outline-variant font-headline text-[10px] font-bold text-secondary uppercase tracking-wider">
-                        <th className="px-6 py-4 cursor-pointer hover:bg-surface-container-high" onClick={() => handleSort('customer_name')}>Customer Name {sortBy === 'customer_name' && (sortOrder === 'asc' ? '↑' : '↓')}</th>
+                        <th className="sticky left-0 bg-surface-container-low border-r border-outline-variant/60 z-20 shadow-[2px_0_5px_rgba(0,0,0,0.03)] px-6 py-4 cursor-pointer hover:bg-surface-container-high sticky-corner" style={{ position: 'sticky', left: 0, zIndex: 20, backgroundColor: 'var(--color-surface-container-low)' }} onClick={() => handleSort('customer_name')}>Customer Name {sortBy === 'customer_name' && (sortOrder === 'asc' ? '↑' : '↓')}</th>
                         <th className="px-6 py-4 cursor-pointer hover:bg-surface-container-high text-right" onClick={() => handleSort('project_count')}>Project Count {sortBy === 'project_count' && (sortOrder === 'asc' ? '↑' : '↓')}</th>
                         <th className="px-6 py-4 cursor-pointer hover:bg-surface-container-high text-right" onClick={() => handleSort('total_budget')}>Total Budget {sortBy === 'total_budget' && (sortOrder === 'asc' ? '↑' : '↓')}</th>
                         <th className="px-6 py-4 cursor-pointer hover:bg-surface-container-high text-right" onClick={() => handleSort('total_received')}>Total Received {sortBy === 'total_received' && (sortOrder === 'asc' ? '↑' : '↓')}</th>
@@ -1224,8 +1224,8 @@ export const Reports: React.FC = () => {
                     </thead>
                     <tbody className="divide-y divide-outline-variant">
                       {getSortedRows(reportData).map((c: any, idx: number) => (
-                        <tr key={idx} className="hover:bg-surface-container-lowest transition-colors">
-                          <td className="px-6 py-4 font-bold text-on-surface">{c.customer_name}</td>
+                        <tr key={idx} className="hover:bg-surface-container-lowest transition-colors group">
+                          <td className="sticky left-0 bg-surface border-r border-outline-variant/60 z-10 shadow-[2px_0_5px_rgba(0,0,0,0.03)] px-6 py-4 font-bold text-on-surface group-hover:bg-surface-container-lowest transition-colors" style={{ position: 'sticky', left: 0, zIndex: 10, backgroundColor: 'var(--color-surface)' }}>{c.customer_name}</td>
                           <td className="px-6 py-4 text-right font-semibold text-secondary">{c.project_count} Projects</td>
                           <td className="px-6 py-4 text-right font-medium text-on-surface">{formatINR(c.total_budget)}</td>
                           <td className="px-6 py-4 text-right font-medium text-success">{formatINR(c.total_received)}</td>
@@ -1242,10 +1242,10 @@ export const Reports: React.FC = () => {
             {activeTab === 'pm-wise-projects' && (
               <div className="border border-outline-variant rounded-xl overflow-hidden shadow-sm bg-surface">
                 <div className="overflow-auto max-h-[calc(100vh-280px)] w-full">
-                  <table className="w-full text-left border-collapse table-sticky-header text-xs font-sans min-w-[800px]">
+                  <table className="w-full text-left border-separate border-spacing-0 table-sticky-header text-xs font-sans min-w-[800px] reports-table-separate">
                     <thead>
                       <tr className="bg-surface-container-low border-b border-outline-variant font-headline text-[10px] font-bold text-secondary uppercase tracking-wider">
-                        <th className="px-6 py-4 cursor-pointer hover:bg-surface-container-high" onClick={() => handleSort('prj_mgr_name')}>Project Manager {sortBy === 'prj_mgr_name' && (sortOrder === 'asc' ? '↑' : '↓')}</th>
+                        <th className="sticky left-0 bg-surface-container-low border-r border-outline-variant/60 z-20 shadow-[2px_0_5px_rgba(0,0,0,0.03)] px-6 py-4 cursor-pointer hover:bg-surface-container-high sticky-corner" style={{ position: 'sticky', left: 0, zIndex: 20, backgroundColor: 'var(--color-surface-container-low)' }} onClick={() => handleSort('prj_mgr_name')}>Project Manager {sortBy === 'prj_mgr_name' && (sortOrder === 'asc' ? '↑' : '↓')}</th>
                         <th className="px-6 py-4 cursor-pointer hover:bg-surface-container-high text-right" onClick={() => handleSort('project_count')}>Project Count {sortBy === 'project_count' && (sortOrder === 'asc' ? '↑' : '↓')}</th>
                         <th className="px-6 py-4 cursor-pointer hover:bg-surface-container-high text-right" onClick={() => handleSort('portfolio_value')}>Portfolio Value {sortBy === 'portfolio_value' && (sortOrder === 'asc' ? '↑' : '↓')}</th>
                         <th className="px-6 py-4 cursor-pointer hover:bg-surface-container-high text-right" onClick={() => handleSort('total_invoices')}>Total Invoices {sortBy === 'total_invoices' && (sortOrder === 'asc' ? '↑' : '↓')}</th>
@@ -1259,8 +1259,8 @@ export const Reports: React.FC = () => {
                         const overduePct = totalInvs > 0 ? Math.round((Number(pm.overdue_invoices || 0) / totalInvs) * 100) : 0;
                         
                         return (
-                          <tr key={idx} className="hover:bg-surface-container-lowest transition-colors">
-                            <td className="px-6 py-4 font-bold text-on-surface">{pm.prj_mgr_name || 'Unassigned'}</td>
+                          <tr key={idx} className="hover:bg-surface-container-lowest transition-colors group">
+                            <td className="sticky left-0 bg-surface border-r border-outline-variant/60 z-10 shadow-[2px_0_5px_rgba(0,0,0,0.03)] px-6 py-4 font-bold text-on-surface group-hover:bg-surface-container-lowest transition-colors" style={{ position: 'sticky', left: 0, zIndex: 10, backgroundColor: 'var(--color-surface)' }}>{pm.prj_mgr_name || 'Unassigned'}</td>
                             <td className="px-6 py-4 text-right font-semibold text-secondary">{pm.project_count} Projects</td>
                             <td className="px-6 py-4 text-right font-semibold text-on-surface">{formatINR(pm.portfolio_value)}</td>
                             <td className="px-6 py-4 text-right font-medium text-secondary">{totalInvs} Invoices</td>
