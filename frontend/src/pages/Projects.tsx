@@ -924,7 +924,7 @@ export const Projects: React.FC = () => {
           ref={filterDropdownRef}
           className="bg-surface-container-lowest border border-outline-variant rounded-xl p-4 shadow-sm space-y-4 text-left font-sans w-full animate-fade-in-up"
         >
-          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-6">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
             {/* Search bar */}
             <div className="space-y-3 col-span-1 sm:col-span-2">
               <span className="text-xs font-bold text-secondary uppercase tracking-wider block">Search</span>
@@ -989,7 +989,7 @@ export const Projects: React.FC = () => {
                 >
                   <option value="All">All Managers</option>
                   {projectManagers.map(m => (
-                    <option key={m.prjMgrId} value={m.prjMgrId}>{m.prjMgrName}</option>
+                     <option key={m.prjMgrId} value={m.prjMgrId}>{m.prjMgrName}</option>
                   ))}
                 </select>
               </div>
@@ -1000,11 +1000,11 @@ export const Projects: React.FC = () => {
             {/* Financial Bounds */}
             <div className="space-y-3">
               <span className="text-xs font-bold text-secondary uppercase tracking-wider block">Financial Bounds</span>
-              <div className="flex gap-2">
+              <div className="flex flex-wrap gap-2">
                 <select
                   value={localAmountField}
                   onChange={(e) => setLocalAmountField(e.target.value)}
-                  className="h-10 text-xs rounded-lg border border-outline-variant bg-surface-container-lowest font-bold px-1.5 outline-none cursor-pointer text-on-surface focus:border-primary focus:ring-1 focus:ring-primary"
+                  className="h-10 text-xs rounded-lg border border-outline-variant bg-surface-container-lowest font-bold px-1.5 outline-none cursor-pointer text-on-surface focus:border-primary focus:ring-1 focus:ring-primary flex-1 min-w-[70px]"
                 >
                   <option value="po_amount">PO Amt</option>
                   <option value="amount_received">Recv</option>
@@ -1014,14 +1014,14 @@ export const Projects: React.FC = () => {
                   value={localMinAmount}
                   onChange={(e) => setLocalMinAmount(e.target.value)}
                   placeholder="Min"
-                  className="h-10 w-full rounded-lg border border-outline-variant text-xs px-2 outline-none text-on-surface bg-surface-container-lowest focus:border-primary focus:ring-1 focus:ring-primary"
+                  className="h-10 w-full rounded-lg border border-outline-variant text-xs px-2 outline-none text-on-surface bg-surface-container-lowest focus:border-primary focus:ring-1 focus:ring-primary flex-1 min-w-[70px]"
                 />
                 <input 
                   type="number"
                   value={localMaxAmount}
                   onChange={(e) => setLocalMaxAmount(e.target.value)}
                   placeholder="Max"
-                  className="h-10 w-full rounded-lg border border-outline-variant text-xs px-2 outline-none text-on-surface bg-surface-container-lowest focus:border-primary focus:ring-1 focus:ring-primary"
+                  className="h-10 w-full rounded-lg border border-outline-variant text-xs px-2 outline-none text-on-surface bg-surface-container-lowest focus:border-primary focus:ring-1 focus:ring-primary flex-1 min-w-[70px]"
                 />
               </div>
             </div>
@@ -1029,19 +1029,19 @@ export const Projects: React.FC = () => {
             {/* Timeline date range */}
             <div className="space-y-3">
               <span className="text-xs font-bold text-secondary uppercase tracking-wider block">Created Timeline</span>
-              <div className="flex items-center gap-2">
+              <div className="flex flex-wrap items-center gap-2">
                 <input 
                   type="date"
                   value={localDateFrom}
                   onChange={(e) => setLocalDateFrom(e.target.value)}
-                  className="h-10 rounded-lg border border-outline-variant text-xs px-2 outline-none text-on-surface bg-surface-container-lowest w-full font-semibold focus:border-primary focus:ring-1 focus:ring-primary"
+                  className="h-10 rounded-lg border border-outline-variant text-xs px-2 outline-none text-on-surface bg-surface-container-lowest flex-1 min-w-[120px] font-semibold focus:border-primary focus:ring-1 focus:ring-primary"
                 />
                 <span className="text-secondary text-xs">to</span>
                 <input 
                   type="date"
                   value={localDateTo}
                   onChange={(e) => setLocalDateTo(e.target.value)}
-                  className="h-10 rounded-lg border border-outline-variant text-xs px-2 outline-none text-on-surface bg-surface-container-lowest w-full font-semibold focus:border-primary focus:ring-1 focus:ring-primary"
+                  className="h-10 rounded-lg border border-outline-variant text-xs px-2 outline-none text-on-surface bg-surface-container-lowest flex-1 min-w-[120px] font-semibold focus:border-primary focus:ring-1 focus:ring-primary"
                 />
               </div>
             </div>

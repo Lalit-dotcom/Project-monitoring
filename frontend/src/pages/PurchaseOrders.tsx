@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useSearchParams, useNavigate, useOutletContext } from 'react-router-dom';
-import { MoreVertical, AlertCircle, Search, X, Filter, AlertTriangle, Download, Loader2 } from 'lucide-react';
+import { AlertCircle, Search, X, Filter, AlertTriangle, Download, Loader2 } from 'lucide-react';
 import { api } from '../lib/api';
 import type { PurchaseOrder } from '../types';
 import { Breadcrumbs } from '../components/Breadcrumbs';
@@ -797,7 +797,7 @@ export const PurchaseOrders: React.FC = () => {
           </div>
         )}
         <div className="max-h-[calc(100vh-280px)] overflow-auto w-full">
-          <table className="w-full text-left border-separate border-spacing-0 min-w-[1100px] table-sticky-header purchase-orders-table-separate">
+          <table className="w-full text-left border-separate border-spacing-0 min-w-[1000px] table-sticky-header purchase-orders-table-separate">
             <thead>
               <tr className="bg-surface-container-low border-b border-outline-variant select-none">
                 <th 
@@ -828,7 +828,7 @@ export const PurchaseOrders: React.FC = () => {
                   Total Amount {sortBy === 'total' && (sortOrder === 'asc' ? '↑' : '↓')}
                 </th>
                 <th className="px-6 py-4 font-headline text-xs font-bold text-secondary uppercase tracking-wider">Approval Status</th>
-                <th className="px-6 py-4 w-12"></th>
+
               </tr>
             </thead>
             <tbody className="divide-y divide-outline-variant">
@@ -843,7 +843,7 @@ export const PurchaseOrders: React.FC = () => {
                     <td className="px-6 py-4"><div className="h-4 bg-surface-container rounded w-24"></div></td>
                     <td className="px-6 py-4"><div className="h-4 bg-surface-container rounded w-20 ml-auto"></div></td>
                     <td className="px-6 py-4"><div className="h-4 bg-surface-container rounded w-24"></div></td>
-                    <td className="px-6 py-4"></td>
+
                   </tr>
                 ))
               ) : paginatedPOs.length === 0 ? (
@@ -889,9 +889,7 @@ export const PurchaseOrders: React.FC = () => {
                         {renderFallback(po.approvalStatus)}
                       </span>
                     </td>
-                    <td className="px-6 py-4 text-right" onClick={(e) => e.stopPropagation()}>
-                      <button className="text-secondary hover:text-primary"><MoreVertical className="w-5 h-5" /></button>
-                    </td>
+
                   </tr>
                 ))
               )}

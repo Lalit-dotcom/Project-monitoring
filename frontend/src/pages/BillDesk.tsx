@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Link, useSearchParams, useOutletContext } from 'react-router-dom';
-import { MoreVertical, AlertCircle, AlertTriangle, Search, X, Filter, Download, Loader2 } from 'lucide-react';
+import { AlertCircle, AlertTriangle, Search, X, Filter, Download, Loader2 } from 'lucide-react';
 import { api } from '../lib/api';
 import type { BillDeskRecord } from '../types';
 import { Breadcrumbs } from '../components/Breadcrumbs';
@@ -730,7 +730,7 @@ export const BillDesk: React.FC = () => {
           </div>
         )}
         <div className="overflow-auto max-h-[calc(100vh-280px)] w-full">
-          <table className="w-full text-left border-separate border-spacing-0 min-w-[1500px] table-sticky-header billdesk-table-separate">
+          <table className="w-full text-left border-separate border-spacing-0 min-w-[1400px] table-sticky-header billdesk-table-separate">
             <thead>
               <tr className="bg-surface-container-low border-b border-outline-variant select-none">
                 <th className="sticky left-0 bg-surface-container-low z-25 border-r border-outline-variant px-6 py-4 font-headline text-xs font-bold text-secondary uppercase tracking-wider sticky-corner">Invoice No</th>
@@ -764,7 +764,7 @@ export const BillDesk: React.FC = () => {
                 <th className="px-6 py-4 font-headline text-xs font-bold text-secondary uppercase tracking-wider">Invoice Status</th>
                 <th className="px-6 py-4 font-headline text-xs font-bold text-secondary uppercase tracking-wider">Status</th>
                 <th className="px-6 py-4 font-headline text-xs font-bold text-secondary uppercase tracking-wider text-center">Objection</th>
-                <th className="px-6 py-4 w-12"></th>
+
               </tr>
             </thead>
             <tbody className="divide-y divide-outline-variant">
@@ -782,7 +782,7 @@ export const BillDesk: React.FC = () => {
                     <td className="px-6 py-4"><div className="h-4 bg-surface-container rounded w-16"></div></td>
                     <td className="px-6 py-4"><div className="h-4 bg-surface-container rounded w-20"></div></td>
                     <td className="px-6 py-4"><div className="h-4 bg-surface-container rounded w-6 mx-auto"></div></td>
-                    <td className="px-6 py-4"></td>
+
                   </tr>
                 ))
               ) : paginatedBills.length === 0 ? (
@@ -843,9 +843,7 @@ export const BillDesk: React.FC = () => {
                         <span className="text-secondary opacity-40">—</span>
                       )}
                     </td>
-                    <td className="px-6 py-4 text-right">
-                      <button className="text-secondary hover:text-primary"><MoreVertical className="w-5 h-5" /></button>
-                    </td>
+
                   </tr>
                 ))
               )}
