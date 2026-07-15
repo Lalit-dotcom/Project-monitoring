@@ -1210,7 +1210,7 @@ export const Projects: React.FC = () => {
           /* Pinned/Sticky Table View */
           <div className="bg-surface border border-outline-variant rounded-xl shadow-sm overflow-hidden flex flex-col">
             <div className="overflow-auto max-h-[calc(100vh-280px)] w-full">
-              <table className="w-full text-left border-collapse min-w-[1800px] table-sticky-header font-sans">
+              <table className="w-full text-left border-separate border-spacing-0 min-w-[1800px] table-sticky-header font-sans projects-table-separate">
                 <thead>
                   <tr className="bg-surface-container-low border-b border-outline-variant">
                     {/* Pinned/Sticky First Column: Project Code */}

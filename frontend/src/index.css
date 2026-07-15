@@ -541,4 +541,16 @@ input, select {
   color: var(--color-on-primary) !important;
 }
 
+/* ─── Projects Table Sticky Column Border Fix ─── */
+.projects-table-separate {
+  border-collapse: separate !important;
+  border-spacing: 0 !important;
+}
+
+.projects-table-separate th,
+.projects-table-separate td {
+  border-bottom: 1px solid var(--color-outline-variant) !important;
+}
+
+
 
