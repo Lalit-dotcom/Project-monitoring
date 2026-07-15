@@ -552,5 +552,14 @@ input, select {
   border-bottom: 1px solid var(--color-outline-variant) !important;
 }
 
+/* Ensure the corner sticky cell stays on top in both directions */
+.projects-table-separate thead th.sticky-corner {
+  position: sticky !important;
+  top: 0 !important;
+  left: 0 !important;
+  z-index: 30 !important;
+}
+
+
 
 

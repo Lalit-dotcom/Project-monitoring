@@ -1214,7 +1214,7 @@ export const Projects: React.FC = () => {
                 <thead>
                   <tr className="bg-surface-container-low border-b border-outline-variant">
                     {/* Pinned/Sticky First Column: Project Code */}
-                    <th className="sticky left-0 bg-surface-container-low border-r border-outline-variant/60 z-20 shadow-[2px_0_5px_rgba(0,0,0,0.03)] px-6 py-4 font-headline text-xs font-bold text-secondary uppercase tracking-wider">
+                    <th className="sticky left-0 bg-surface-container-low border-r border-outline-variant/60 z-20 shadow-[2px_0_5px_rgba(0,0,0,0.03)] px-6 py-4 font-headline text-xs font-bold text-secondary uppercase tracking-wider sticky-corner">
                       Project Code
                     </th>
                     <th className="px-6 py-4 font-headline text-xs font-bold text-secondary uppercase tracking-wider">
