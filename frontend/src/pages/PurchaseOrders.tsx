@@ -856,7 +856,7 @@ export const PurchaseOrders: React.FC = () => {
                 paginatedPOs.map((po, i) => (
                   <tr 
                     key={po.id} 
-                    onClick={() => navigate(`/projects/${po.projectNo}`)}
+                    onClick={() => navigate(`/projects/${po.projectNo}?tab=purchaseorders`)}
                     className="group hover:bg-surface-container-low transition-colors cursor-pointer animate-row-stagger" 
                     style={{ animationDelay: `${Math.min(i * 20, 400)}ms` }}
                   >

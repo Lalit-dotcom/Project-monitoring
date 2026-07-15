@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { 
   LineChart, 
   Line, 
@@ -30,6 +31,8 @@ import { toast } from '../lib/toast';
 
 export const Reports: React.FC = () => {
   const { theme } = useTheme();
+  const navigate = useNavigate();
+
 
   // Filters State
   const [filters, setFilters] = useState({
@@ -781,7 +784,11 @@ export const Reports: React.FC = () => {
                     </thead>
                     <tbody className="divide-y divide-outline-variant">
                       {getSortedRows(reportData).map((p: any, idx: number) => (
-                        <tr key={idx} className="hover:bg-surface-container-lowest transition-colors group">
+                        <tr 
+                          key={idx} 
+                          onClick={() => navigate(`/projects/${p.project_cd}?tab=overview`)}
+                          className="hover:bg-surface-container-lowest transition-colors group cursor-pointer"
+                        >
                           {/* Pinned Leftmost Column: Project Code */}
                           <td className="sticky left-0 bg-surface border-r border-outline-variant/60 z-10 shadow-[2px_0_5px_rgba(0,0,0,0.03)] px-6 py-4 font-bold text-primary group-hover:bg-surface-container-lowest transition-colors dont-translate bhashini-skip-translation" style={{ position: 'sticky', left: 0, zIndex: 10, backgroundColor: 'var(--color-surface)' }}>{p.project_cd}</td>
                           <td className="px-6 py-4 font-semibold text-on-surface">{p.prj_nm}</td>
@@ -1002,7 +1009,11 @@ export const Reports: React.FC = () => {
                     </thead>
                     <tbody className="divide-y divide-outline-variant">
                       {getSortedRows(reportData).map((po: any, idx: number) => (
-                        <tr key={idx} className="hover:bg-surface-container-lowest transition-colors group">
+                        <tr 
+                          key={idx} 
+                          onClick={() => navigate(`/projects/${po.project_no}?tab=purchaseorders`)}
+                          className="hover:bg-surface-container-lowest transition-colors group cursor-pointer"
+                        >
                           {/* Pinned leftmost: PO Number */}
                           <td className="sticky left-0 bg-surface border-r border-outline-variant/60 z-10 shadow-[2px_0_5px_rgba(0,0,0,0.03)] px-6 py-4 font-bold text-on-surface group-hover:bg-surface-container-lowest transition-colors dont-translate bhashini-skip-translation" style={{ position: 'sticky', left: 0, zIndex: 10, backgroundColor: 'var(--color-surface)' }}>{po.final_po_no}</td>
                           <td className="px-6 py-4 font-semibold text-primary dont-translate bhashini-skip-translation">{po.project_no}</td>
@@ -1085,7 +1096,11 @@ export const Reports: React.FC = () => {
                     </thead>
                     <tbody className="divide-y divide-outline-variant">
                       {getSortedRows(reportData).map((inv: any, idx: number) => (
-                        <tr key={idx} className="hover:bg-surface-container-lowest transition-colors group">
+                        <tr 
+                          key={idx} 
+                          onClick={() => navigate(`/projects/${inv.project_no}?tab=invoices`)}
+                          className="hover:bg-surface-container-lowest transition-colors group cursor-pointer"
+                        >
                           {/* Pinned leftmost: Invoice # */}
                           <td className="sticky left-0 bg-surface border-r border-outline-variant/60 z-10 shadow-[2px_0_5px_rgba(0,0,0,0.03)] px-6 py-4 font-bold text-on-surface group-hover:bg-surface-container-lowest transition-colors dont-translate bhashini-skip-translation" style={{ position: 'sticky', left: 0, zIndex: 10, backgroundColor: 'var(--color-surface)' }}>{inv.invoice_num}</td>
                           <td className="px-6 py-4 font-semibold text-primary dont-translate bhashini-skip-translation">{inv.project_no}</td>
@@ -1180,7 +1195,11 @@ export const Reports: React.FC = () => {
                     </thead>
                     <tbody className="divide-y divide-outline-variant">
                       {getSortedRows(reportData).map((inv: any, idx: number) => (
-                        <tr key={idx} className="hover:bg-surface-container-lowest transition-colors group">
+                        <tr 
+                          key={idx} 
+                          onClick={() => navigate(`/projects/${inv.project_no}?tab=invoices`)}
+                          className="hover:bg-surface-container-lowest transition-colors group cursor-pointer"
+                        >
                           {/* Pinned leftmost: Invoice # */}
                           <td className="sticky left-0 bg-surface border-r border-outline-variant/60 z-10 shadow-[2px_0_5px_rgba(0,0,0,0.03)] px-6 py-4 font-bold text-on-surface group-hover:bg-surface-container-lowest transition-colors dont-translate bhashini-skip-translation" style={{ position: 'sticky', left: 0, zIndex: 10, backgroundColor: 'var(--color-surface)' }}>{inv.invoice_num}</td>
                           <td className="px-6 py-4 font-semibold text-primary dont-translate bhashini-skip-translation">{inv.project_no}</td>

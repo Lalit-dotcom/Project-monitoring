@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Link, useSearchParams, useOutletContext } from 'react-router-dom';
+import { useSearchParams, useOutletContext, useNavigate } from 'react-router-dom';
 import { AlertCircle, Search, X, Filter, AlertTriangle, Download, Loader2 } from 'lucide-react';
 import { api } from '../lib/api';
 import type { TaxInvoice } from '../types';
@@ -11,6 +11,8 @@ import { toast } from '../lib/toast';
 export const TaxInvoices: React.FC = () => {
   const [searchParams, setSearchParams] = useSearchParams();
   const { searchQuery } = useOutletContext<{ searchQuery: string }>();
+  const navigate = useNavigate();
+
 
   // Parse filters from URL
   const search = searchParams.get('search') || '';
@@ -774,14 +776,19 @@ export const TaxInvoices: React.FC = () => {
                 />
               ) : (
                 paginatedTxs.map((tx, i) => (
-                  <tr key={tx.id} className="group hover:bg-surface-container-low transition-colors animate-row-stagger" style={{ animationDelay: `${Math.min(i * 20, 400)}ms` }}>
+                  <tr 
+                    key={tx.id} 
+                    onClick={() => navigate(`/projects/${tx.projectNo}?tab=taxinvoices`)}
+                    className="group hover:bg-surface-container-low transition-colors cursor-pointer animate-row-stagger" 
+                    style={{ animationDelay: `${Math.min(i * 20, 400)}ms` }}
+                  >
                     <td className="sticky left-0 bg-surface-container-lowest group-hover:bg-surface-container-low transition-colors duration-150 z-10 border-r border-outline-variant px-6 py-4 font-headline text-sm font-bold text-primary dont-translate bhashini-skip-translation">
                       {renderFallback(tx.userBillNo)}
                     </td>
                     <td className="px-6 py-4 dont-translate bhashini-skip-translation">
-                      <Link to={`/projects?projectNo=${tx.projectNo}`} className="hover:underline text-primary font-semibold font-sans text-sm">
+                      <span className="text-primary font-semibold font-sans text-sm">
                         {tx.projectNo}
-                      </Link>
+                      </span>
                     </td>
                     <td className="px-6 py-4 font-sans text-sm text-secondary dont-translate bhashini-skip-translation">
                       {renderFallback(tx.custGstinNo)}

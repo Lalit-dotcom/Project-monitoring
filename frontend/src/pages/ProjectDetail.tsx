@@ -1,19 +1,24 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { useParams, useOutletContext, useNavigate, useSearchParams } from 'react-router-dom';
+import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { 
-  Briefcase, 
   Info, 
   ChevronLeft, 
   ChevronRight, 
+  ChevronDown,
   Check, 
   Mail, 
   FileText,
   AlertCircle,
+  AlertTriangle,
+  CheckCircle2,
   MoreVertical,
   ShoppingCart,
   Download,
   Loader2,
-  Bell
+  Bell,
+  Maximize2,
+  Minimize2,
+  Search
 } from 'lucide-react';
 import {
   ComposedChart,
@@ -27,30 +32,39 @@ import {
 } from 'recharts';
 import { useTheme } from '../context/ThemeContext';
 import { api } from '../lib/api';
-import type { Project, Invoice, PurchaseOrder, TaxInvoice, Activity, DatabaseProject } from '../types';
+import type { Project, Invoice, PurchaseOrder, TaxInvoice, Activity, DatabaseProject, BillDeskRecord } from '../types';
 import { Toast } from '../components/Toast';
 import { NoticeModal } from '../components/NoticeModal';
 import { CompactStatCard } from '../components/CompactStatCard';
 import { Breadcrumbs } from '../components/Breadcrumbs';
 
-type TabName = 'Overview' | 'Purchase Orders' | 'Invoices' | 'Tax Invoices' | 'Bill Desk' | 'Documents';
+type TabName = 'Overview' | 'Purchase Orders' | 'Invoices' | 'Tax Invoices' | 'Bill Desk';
 
 export const ProjectDetail: React.FC = () => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const { searchQuery } = useOutletContext<{ searchQuery: string }>();
   const { theme } = useTheme();
 
   const [project, setProject] = useState<(Project & DatabaseProject) | null>(null);
   const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [purchaseOrders, setPurchaseOrders] = useState<PurchaseOrder[]>([]);
   const [taxInvoices, setTaxInvoices] = useState<TaxInvoice[]>([]);
+  const [billDesk, setBillDesk] = useState<BillDeskRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [showExportPopover, setShowExportPopover] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
   const [showNoticeModal, setShowNoticeModal] = useState(false);
   const exportDropdownRef = useRef<HTMLDivElement>(null);
   const exportButtonRef = useRef<HTMLButtonElement>(null);
+
+  // Pagination and Layout states
+  const [currentPage, setCurrentPage] = useState(1);
+  const [rowsPerPage, setRowsPerPage] = useState(5);
+  const [isTableExpanded, setIsTableExpanded] = useState(false);
+  const [showRowsPerPagePopover, setShowRowsPerPagePopover] = useState(false);
+  const [tabSearchQuery, setTabSearchQuery] = useState('');
+  const rowsPerPageDropdownRef = useRef<HTMLDivElement>(null);
+  const rowsPerPageButtonRef = useRef<HTMLButtonElement>(null);
 
   const handleExport = async (format: 'excel' | 'pdf') => {
     if (!project) return;
@@ -76,11 +90,21 @@ export const ProjectDetail: React.FC = () => {
       ) {
         setShowExportPopover(false);
       }
+      if (
+        showRowsPerPagePopover &&
+        rowsPerPageDropdownRef.current &&
+        !rowsPerPageDropdownRef.current.contains(event.target as Node) &&
+        rowsPerPageButtonRef.current &&
+        !rowsPerPageButtonRef.current.contains(event.target as Node)
+      ) {
+        setShowRowsPerPagePopover(false);
+      }
     };
 
     const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape' && showExportPopover) {
+      if (event.key === 'Escape') {
         setShowExportPopover(false);
+        setShowRowsPerPagePopover(false);
       }
     };
 
@@ -91,7 +115,7 @@ export const ProjectDetail: React.FC = () => {
       document.removeEventListener('mousedown', handleClickOutside);
       document.removeEventListener('keydown', handleKeyDown);
     };
-  }, [showExportPopover]);
+  }, [showExportPopover, showRowsPerPagePopover]);
   const [searchParams, setSearchParams] = useSearchParams();
   const [showToast, setShowToast] = useState(false);
 
@@ -103,7 +127,6 @@ export const ProjectDetail: React.FC = () => {
     if (normalized === 'invoices') return 'Invoices';
     if (normalized === 'taxinvoices') return 'Tax Invoices';
     if (normalized === 'billdesk') return 'Bill Desk';
-    if (normalized === 'documents') return 'Documents';
     return 'Overview';
   };
 
@@ -113,11 +136,13 @@ export const ProjectDetail: React.FC = () => {
     const paramVal = tab.toLowerCase().replace(/\s+/g, '-');
     setSearchParams({ tab: paramVal }, { replace: true });
     setCurrentPage(1);
+    setTabSearchQuery('');
   };
 
-  // Pagination states
-  const [currentPage, setCurrentPage] = useState(1);
-  const rowsPerPage = 5;
+  const handleSearchChange = (val: string) => {
+    setTabSearchQuery(val);
+    setCurrentPage(1);
+  };
 
   useEffect(() => {
     const loadProjectData = async () => {
@@ -132,6 +157,8 @@ export const ProjectDetail: React.FC = () => {
           setPurchaseOrders(allPOs.filter(po => po.projectNo === id));
           const allTxs = await api.getTaxInvoices();
           setTaxInvoices(allTxs.filter(tx => tx.projectNo === id));
+          const allBDs = await api.getBillDesk();
+          setBillDesk(allBDs.filter(b => b.projectNo === id));
           
           // Trigger system sync toast on load
           setShowToast(true);
@@ -236,6 +263,84 @@ export const ProjectDetail: React.FC = () => {
     computedPriority = 'Medium';
   }
 
+  let overdue90_plus_count = 0;
+  let total_overdue_count = 0;
+
+  invoices.forEach(inv => {
+    const unpaid = inv.unpaid || 0;
+    if (unpaid <= 0) return;
+    const invDate = new Date(inv.invoiceDate || '');
+    if (isNaN(invDate.getTime())) return;
+    const diffTime = Math.abs(new Date().getTime() - invDate.getTime());
+    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+    
+    total_overdue_count++;
+    if (diffDays > 90) {
+      overdue90_plus_count++;
+    }
+  });
+
+  let priorityTooltip = '';
+  if (computedPriority === 'High') {
+    if (overdue90_plus > 0) {
+      priorityTooltip = `High — ${formatINR(overdue90_plus, false)} across ${overdue90_plus_count} invoice${overdue90_plus_count > 1 ? 's' : ''} overdue 90+ days.`;
+    } else if ((totalOverdue / normalizationBase) > 0.2) {
+      priorityTooltip = `High — total overdue is ${((totalOverdue / normalizationBase) * 100).toFixed(0)}% of project base, exceeding 20% limit.`;
+    } else {
+      priorityTooltip = `High — project financial health score is critical (${computedHealth.toFixed(1)}%).`;
+    }
+  } else if (computedPriority === 'Medium') {
+    priorityTooltip = `Medium — some overdue exposure exists (${formatINR(totalOverdue, false)} across ${total_overdue_count} invoice${total_overdue_count > 1 ? 's' : ''}).`;
+  } else {
+    priorityTooltip = 'Low — no significant overdue exposure.';
+  }
+
+  // Problems / Risk Flags Calculations
+  const getActiveProblems = () => {
+    const problems: { title: string; description: string }[] = [];
+    if (!project) return problems;
+
+    // 1. Vendor Paid More Than Collected From Client
+    const totalInvoiceAmountPaid = invoices.reduce((sum, inv) => sum + (inv.amountPaid || 0), 0);
+    const amountReceived = project.amountReceived || 0;
+    if (totalInvoiceAmountPaid > amountReceived) {
+      problems.push({
+        title: 'Vendor Paid More Than Collected From Client',
+        description: `NICSI has paid vendors a total of ${formatINR(totalInvoiceAmountPaid, false)}, which exceeds the ${formatINR(amountReceived, false)} received from the client — cash flow risk.`
+      });
+    }
+
+    // 2. Billing Ahead of Collection
+    const poAmount = project.poAmount || 0;
+    if (amountReceived < poAmount * 0.8) {
+      problems.push({
+        title: 'Billing Ahead of Collection',
+        description: `Client collections (${formatINR(amountReceived, false)}) are below 80% of total PO value (${formatINR(poAmount, false)}).`
+      });
+    }
+
+    // 3. Stalled — PO Issued, Nothing Billed Yet
+    const hasOldPo = purchaseOrders.some(po => {
+      if (!po.poDate) return false;
+      const poDateObj = new Date(po.poDate);
+      if (isNaN(poDateObj.getTime())) return false;
+      const diffTime = Math.abs(new Date().getTime() - poDateObj.getTime());
+      const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+      return diffDays > 60;
+    });
+    const noOfInvoices = project.noOfInvBilldesk ?? 0;
+    if (noOfInvoices === 0 && billDesk.length === 0 && hasOldPo) {
+      problems.push({
+        title: 'Stalled — PO Issued, Nothing Billed Yet',
+        description: 'A purchase order was raised over 60 days ago, but no invoices have been posted to the bill desk yet.'
+      });
+    }
+
+    return problems;
+  };
+
+  const activeProblems = getActiveProblems();
+
   // Contract Duration Calculation
   let earliestDate: Date | null = null;
   let latestDate: Date | null = null;
@@ -274,14 +379,7 @@ export const ProjectDetail: React.FC = () => {
     computedDuration = `${totalMonths} Month${totalMonths > 1 ? 's' : ''} (${startFormatted} – ${endFormatted})`;
   }
 
-  let healthMessage = 'Performance is within projected margins';
-  if (computedHealth >= 80) {
-    healthMessage = 'Performance is healthy and within projected margins';
-  } else if (computedHealth >= 50) {
-    healthMessage = 'Caution: Moderate overdue invoices present';
-  } else {
-    healthMessage = 'Critical: High overdue invoices, requires immediate action';
-  }
+  // healthMessage removed as Financial Health block is no longer rendered
 
   // Derive activities dynamically from real database records (POs, Invoices, Tax Invoices)
   const getDerivedActivities = (): Activity[] => {
@@ -337,23 +435,36 @@ export const ProjectDetail: React.FC = () => {
 
   const derivedActivities = getDerivedActivities();
 
-  // Filter lists based on search query in layout context
+  // Filter lists based on tab-scoped search query
   const filteredInvoices = invoices.filter(i => 
-    String(i.invoiceNum || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
-    String(i.invoiceType || '').toLowerCase().includes(searchQuery.toLowerCase())
+    String(i.invoiceNum || '').toLowerCase().includes(tabSearchQuery.toLowerCase()) ||
+    String(i.vendorName || '').toLowerCase().includes(tabSearchQuery.toLowerCase())
   );
 
   const filteredPOs = purchaseOrders.filter(po => 
-    String(po.finalPoNo || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
-    String(po.vendorName || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
-    String(po.approvalStatus || '').toLowerCase().includes(searchQuery.toLowerCase())
+    String(po.finalPoNo || '').toLowerCase().includes(tabSearchQuery.toLowerCase()) ||
+    String(po.vendorName || '').toLowerCase().includes(tabSearchQuery.toLowerCase())
   );
 
   const filteredTxs = taxInvoices.filter(tx => 
-    String(tx.userBillNo || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
-    String(tx.poNo || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
-    String(tx.billStatus || '').toLowerCase().includes(searchQuery.toLowerCase())
+    String(tx.userBillNo || '').toLowerCase().includes(tabSearchQuery.toLowerCase())
   );
+
+  const filteredBillDesk = billDesk.filter(b => 
+    String(b.invoiceNo || '').toLowerCase().includes(tabSearchQuery.toLowerCase()) ||
+    String(b.vendorName || '').toLowerCase().includes(tabSearchQuery.toLowerCase())
+  );
+
+  const getBillDeskStatusClasses = (status: string | null | undefined) => {
+    if (!status) return 'bg-status-neutral-bg text-status-neutral-text border-status-neutral-border';
+    const s = status.toLowerCase();
+    if (s.includes('done') || s.includes('paid') || s.includes('approved')) {
+      return 'bg-status-success-bg text-status-success-text border-status-success-border';
+    } else if (s.includes('pending') || s.includes('process')) {
+      return 'bg-status-warning-bg text-status-warning-text border-status-warning-border';
+    }
+    return 'bg-status-neutral-bg text-status-neutral-text border-status-neutral-border';
+  };
 
   // Paginated elements helper
   const paginate = (items: any[]) => {
@@ -361,13 +472,109 @@ export const ProjectDetail: React.FC = () => {
     return items.slice(startIndex, startIndex + rowsPerPage);
   };
 
-  const handlePageChange = (direction: 'prev' | 'next', totalItems: number) => {
+
+
+  const handlePageClick = (pageNum: number, totalItems: number) => {
     const maxPage = Math.ceil(totalItems / rowsPerPage);
-    if (direction === 'prev' && currentPage > 1) {
-      setCurrentPage(currentPage - 1);
-    } else if (direction === 'next' && currentPage < maxPage) {
-      setCurrentPage(currentPage + 1);
+    if (pageNum >= 1 && pageNum <= maxPage) {
+      setCurrentPage(pageNum);
     }
+  };
+
+  const renderPaginationFooter = (totalCount: number) => {
+    const totalPages = Math.ceil(totalCount / rowsPerPage);
+    if (totalPages <= 0) return null;
+
+    const startEntry = totalCount === 0 ? 0 : (currentPage - 1) * rowsPerPage + 1;
+    const endEntry = Math.min(totalCount, currentPage * rowsPerPage);
+
+    return (
+      <div className="px-6 py-4 bg-surface-container-low border-t border-outline-variant flex flex-col sm:flex-row gap-4 items-center justify-between font-sans text-xs text-secondary">
+        <div className="flex items-center gap-4 flex-wrap">
+          <span>
+            Showing <strong className="text-on-surface font-semibold">{startEntry}</strong> - <strong className="text-on-surface font-semibold">{endEntry}</strong> of <strong className="text-on-surface font-semibold">{totalCount}</strong> entries
+          </span>
+          <div className="flex items-center gap-1.5 ml-2 relative">
+            <span className="text-secondary text-xs">Rows per page:</span>
+            
+            {/* Rows per page popover select */}
+            <div className="relative inline-block">
+              <button
+                ref={rowsPerPageButtonRef}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setShowRowsPerPagePopover(!showRowsPerPagePopover);
+                }}
+                className="h-8 px-2.5 border border-outline-variant hover:border-outline text-secondary hover:bg-surface-container-low rounded-md font-sans text-xs font-semibold flex items-center gap-1 bg-white shadow-sm transition-colors"
+              >
+                <span>{rowsPerPage}</span>
+                <ChevronDown className="w-3 h-3 text-secondary" />
+              </button>
+
+              {showRowsPerPagePopover && (
+                <div 
+                  ref={rowsPerPageDropdownRef}
+                  className="absolute bottom-full left-0 mb-1 w-16 bg-surface border border-outline-variant rounded-md shadow-lg z-50 py-1"
+                >
+                  {[5, 10, 25, 50].map((option) => (
+                    <button
+                      key={option}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setRowsPerPage(option);
+                        setCurrentPage(1);
+                        setShowRowsPerPagePopover(false);
+                      }}
+                      className={`w-full text-center px-3 py-1.5 text-xs font-semibold hover:bg-surface-container-low transition-colors ${
+                        rowsPerPage === option ? 'text-primary bg-primary/5 font-bold' : 'text-on-surface'
+                      }`}
+                    >
+                      {option}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+        
+        <div className="flex items-center gap-1.5">
+          <button
+            onClick={() => handlePageClick(currentPage - 1, totalCount)}
+            disabled={currentPage === 1}
+            className="p-1.5 border border-outline-variant rounded hover:bg-surface-container-lowest disabled:opacity-40 disabled:hover:bg-transparent transition-colors"
+          >
+            <ChevronLeft className="w-4 h-4" />
+          </button>
+
+          {Array.from({ length: totalPages }).map((_, idx) => {
+            const pageNum = idx + 1;
+            const isActive = pageNum === currentPage;
+            return (
+              <button
+                key={pageNum}
+                onClick={() => handlePageClick(pageNum, totalCount)}
+                className={`w-8 h-8 flex items-center justify-center rounded-md font-bold text-xs transition-colors ${
+                  isActive 
+                    ? 'bg-[#111827] text-white hover:bg-[#1f2937] cursor-default' 
+                    : 'border border-outline-variant hover:bg-surface-container-lowest text-secondary bg-white'
+                }`}
+              >
+                {pageNum}
+              </button>
+            );
+          })}
+
+          <button
+            onClick={() => handlePageClick(currentPage + 1, totalCount)}
+            disabled={currentPage === totalPages}
+            className="p-1.5 border border-outline-variant rounded hover:bg-surface-container-lowest disabled:opacity-40 disabled:hover:bg-transparent transition-colors"
+          >
+            <ChevronRight className="w-4 h-4" />
+          </button>
+        </div>
+      </div>
+    );
   };
 
   return (
@@ -544,18 +751,18 @@ export const ProjectDetail: React.FC = () => {
       {/* Main Double Column Section */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-stack-lg">
         {/* Left Section: Details Table & Timeline */}
-        <div className="lg:col-span-2 space-y-stack-lg">
+        <div className={`${isTableExpanded ? 'lg:col-span-3' : 'lg:col-span-2'} space-y-stack-lg`}>
           
           {/* Tabbed Card container */}
           <div className="bg-surface-container-lowest border border-outline-variant rounded-md overflow-hidden flex flex-col shadow-sm">
             {/* Tab Navigation header */}
             <div className="flex items-center px-6 bg-surface-container-low border-b border-outline-variant">
-              <div className="flex space-x-6 h-14 items-center overflow-x-auto no-scrollbar">
-                {(['Overview', 'Purchase Orders', 'Invoices', 'Tax Invoices', 'Bill Desk', 'Documents'] as TabName[]).map((tab) => (
+              <div className="flex space-x-10 h-14 items-center overflow-x-auto no-scrollbar">
+                {(['Overview', 'Purchase Orders', 'Invoices', 'Tax Invoices', 'Bill Desk'] as TabName[]).map((tab) => (
                   <button
                     key={tab}
                     onClick={() => handleTabChange(tab)}
-                    className={`h-full px-1 font-headline text-xs font-semibold tracking-wider uppercase whitespace-nowrap transition-all border-b-2 ${
+                    className={`h-full px-2 font-headline text-xs font-semibold tracking-wider uppercase whitespace-nowrap transition-all border-b-2 ${
                       activeTab === tab 
                         ? 'text-primary border-primary font-bold' 
                         : 'text-secondary border-transparent hover:text-primary'
@@ -566,27 +773,34 @@ export const ProjectDetail: React.FC = () => {
                 ))}
               </div>
               
-              {/* Pagination indicators on right side */}
-              {activeTab !== 'Overview' && activeTab !== 'Bill Desk' && (
-                <div className="ml-auto hidden md:flex items-center gap-3">
-                  <div className="h-8 w-px bg-outline-variant mx-2" />
-                  <span className="text-secondary text-xs">Rows per page: {rowsPerPage}</span>
-                  <div className="flex gap-1">
-                    <button 
-                      onClick={() => handlePageChange('prev', activeTab === 'Invoices' ? filteredInvoices.length : activeTab === 'Purchase Orders' ? filteredPOs.length : filteredTxs.length)}
-                      className="p-1 hover:bg-surface-container rounded-md text-secondary"
-                    >
-                      <ChevronLeft className="w-4 h-4" />
-                    </button>
-                    <button 
-                      onClick={() => handlePageChange('next', activeTab === 'Invoices' ? filteredInvoices.length : activeTab === 'Purchase Orders' ? filteredPOs.length : filteredTxs.length)}
-                      className="p-1 hover:bg-surface-container rounded-md text-secondary"
-                    >
-                      <ChevronRight className="w-4 h-4" />
-                    </button>
+              {/* Right side container: search box + expand/collapse button */}
+              <div className="ml-auto flex items-center gap-3">
+                {activeTab !== 'Overview' && (
+                  <div className="relative">
+                    <Search className="w-3.5 h-3.5 text-secondary absolute left-2.5 top-1/2 -translate-y-1/2" />
+                    <input
+                      type="text"
+                      placeholder={`Search ${activeTab}...`}
+                      value={tabSearchQuery}
+                      onChange={(e) => handleSearchChange(e.target.value)}
+                      className="h-8 pl-8 pr-3 text-xs border border-outline-variant hover:border-outline focus:border-primary focus:outline-none rounded-md bg-white w-40 md:w-56 font-sans transition-all"
+                    />
                   </div>
-                </div>
-              )}
+                )}
+                
+                {/* Expand / Collapse Button */}
+                <button
+                  onClick={() => setIsTableExpanded(!isTableExpanded)}
+                  className="p-1.5 hover:bg-surface-container rounded-md text-secondary hover:text-primary transition-colors"
+                  title={isTableExpanded ? "Minimize Layout" : "Maximize Layout"}
+                >
+                  {isTableExpanded ? (
+                    <Minimize2 className="w-4 h-4" />
+                  ) : (
+                    <Maximize2 className="w-4 h-4" />
+                  )}
+                </button>
+              </div>
             </div>
 
             {/* Tab contents */}
@@ -650,25 +864,7 @@ export const ProjectDetail: React.FC = () => {
                       )}
                     </tbody>
                   </table>
-                  <div className="p-4 border-t border-outline-variant bg-surface-container-low/40 flex justify-between items-center text-secondary text-xs font-sans">
-                    <p>Showing {Math.min(filteredInvoices.length, (currentPage - 1) * rowsPerPage + 1)} to {Math.min(filteredInvoices.length, currentPage * rowsPerPage)} of {filteredInvoices.length} invoices</p>
-                    <div className="flex gap-2">
-                      <button 
-                        onClick={() => handlePageChange('prev', filteredInvoices.length)}
-                        className="px-3 py-1 border border-outline-variant bg-white rounded hover:bg-surface disabled:opacity-50"
-                        disabled={currentPage === 1}
-                      >
-                        Prev
-                      </button>
-                      <button 
-                        onClick={() => handlePageChange('next', filteredInvoices.length)}
-                        className="px-3 py-1 border border-outline-variant bg-white rounded hover:bg-surface disabled:opacity-50"
-                        disabled={currentPage >= Math.ceil(filteredInvoices.length / rowsPerPage)}
-                      >
-                        Next
-                      </button>
-                    </div>
-                  </div>
+                  {renderPaginationFooter(filteredInvoices.length)}
                 </>
               )}
 
@@ -708,9 +904,7 @@ export const ProjectDetail: React.FC = () => {
                       )}
                     </tbody>
                   </table>
-                  <div className="p-4 border-t border-outline-variant bg-surface-container-low/40 flex justify-between items-center text-secondary text-xs">
-                    <p>Showing {Math.min(filteredPOs.length, (currentPage - 1) * rowsPerPage + 1)} to {Math.min(filteredPOs.length, currentPage * rowsPerPage)} of {filteredPOs.length} POs</p>
-                  </div>
+                  {renderPaginationFooter(filteredPOs.length)}
                 </>
               )}
 
@@ -752,9 +946,7 @@ export const ProjectDetail: React.FC = () => {
                       )}
                     </tbody>
                   </table>
-                  <div className="p-4 border-t border-outline-variant bg-surface-container-low/40 flex justify-between items-center text-secondary text-xs">
-                    <p>Showing {Math.min(filteredTxs.length, (currentPage - 1) * rowsPerPage + 1)} to {Math.min(filteredTxs.length, currentPage * rowsPerPage)} of {filteredTxs.length} tax invoices</p>
-                  </div>
+                  {renderPaginationFooter(filteredTxs.length)}
                 </>
               )}
 
@@ -870,39 +1062,46 @@ export const ProjectDetail: React.FC = () => {
 
               {/* BILL DESK TAB */}
               {activeTab === 'Bill Desk' && (
-                <div className="p-6 space-y-4 font-sans">
-                  <div className="flex justify-between items-center">
-                    <div>
-                      <h4 className="font-headline text-lg font-bold text-on-surface">Project Billing Desk</h4>
-                      <p className="text-secondary text-sm">Direct portal to settle pending claims and audit draft payouts.</p>
-                    </div>
-                    <button 
-                      onClick={() => navigate(`/bill-desk?projectNo=${id}`)}
-                      className="px-4 py-2 bg-primary hover:bg-primary-container text-white font-headline text-xs font-bold rounded-lg shadow-sm transition-colors"
-                    >
-                      View in Bill Desk
-                    </button>
-                  </div>
-                  
-                  <div className="bg-primary/5 border border-primary/20 rounded-lg p-4 flex gap-4 items-start">
-                    <Info className="w-5 h-5 text-primary shrink-0 mt-0.5" />
-                    <div>
-                      <p className="text-sm font-semibold text-primary">Pre-Audit Recommended</p>
-                      <p className="text-xs text-secondary mt-1">
-                        System highlights that {project.poCount} active POs are fully funded. Ensure matching compliance tags are attached before posting invoices.
-                      </p>
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {/* DOCUMENTS TAB */}
-              {activeTab === 'Documents' && (
-                <div className="p-12 text-center text-secondary font-headline flex flex-col items-center gap-3 bg-surface-container-low/10 border border-outline-variant rounded-lg">
-                  <span className="text-3xl opacity-40">📁</span>
-                  <span className="font-semibold text-sm">No documents uploaded yet</span>
-                  <span className="text-xs text-secondary/60">Documents associated with this project will appear here once uploaded.</span>
-                </div>
+                <>
+                  <table className="w-full text-left border-collapse">
+                    <thead className="bg-surface-container-low/50">
+                      <tr className="border-b border-outline-variant">
+                        <th className="px-6 py-4 font-headline text-xs font-bold text-secondary uppercase tracking-wider">Invoice # / Bill No</th>
+                        <th className="px-6 py-4 font-headline text-xs font-bold text-secondary uppercase tracking-wider">Vendor</th>
+                        <th className="px-6 py-4 font-headline text-xs font-bold text-secondary uppercase tracking-wider">Bill Month</th>
+                        <th className="px-6 py-4 font-headline text-xs font-bold text-secondary uppercase tracking-wider">Invoice Date</th>
+                        <th className="px-6 py-4 font-headline text-xs font-bold text-secondary uppercase tracking-wider text-right">Invoice Amt</th>
+                        <th className="px-6 py-4 font-headline text-xs font-bold text-secondary uppercase tracking-wider text-right">Paid Amt</th>
+                        <th className="px-6 py-4 font-headline text-xs font-bold text-secondary uppercase tracking-wider">Status</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-outline-variant">
+                      {filteredBillDesk.length === 0 ? (
+                        <tr>
+                          <td colSpan={7} className="px-6 py-8 text-center text-secondary font-headline">No bill desk records found for this project.</td>
+                        </tr>
+                      ) : (
+                        paginate(filteredBillDesk).map((b) => (
+                          <tr key={b.id} className="hover:bg-surface transition-colors">
+                            <td className="px-6 py-4 font-headline text-sm font-semibold text-primary dont-translate bhashini-skip-translation">{b.invoiceNo || b.id}</td>
+                            <td className="px-6 py-4 text-secondary text-sm" title={b.vendorName || ''}>{b.vendorName || '-'}</td>
+                            <td className="px-6 py-4 text-secondary text-sm">{b.billMonth || '-'}</td>
+                            <td className="px-6 py-4 text-secondary text-sm">{formatDate(b.invoiceDate)}</td>
+                            <td className="px-6 py-4 text-right font-headline text-base font-bold text-on-surface dont-translate bhashini-skip-translation">{formatINR(b.invoiceAmount || 0, false)}</td>
+                            <td className="px-6 py-4 text-right font-headline text-base font-bold text-on-surface dont-translate bhashini-skip-translation">{formatINR(b.amountPaid || 0, false)}</td>
+                            <td className="px-6 py-4">
+                              <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider border ${getBillDeskStatusClasses(b.status)}`}>
+                                <span className="w-1.5 h-1.5 rounded-full bg-current" />
+                                {b.status || 'Unknown'}
+                              </span>
+                            </td>
+                          </tr>
+                        ))
+                      )}
+                    </tbody>
+                  </table>
+                  {renderPaginationFooter(filteredBillDesk.length)}
+                </>
               )}
 
             </div>
@@ -960,52 +1159,66 @@ export const ProjectDetail: React.FC = () => {
 
         </div>
 
-        {/* Right Section: Sidebar Metadata & Health */}
-        <div className="space-y-stack-lg">
-          
-          {/* Project Details block */}
-          <div className="bg-surface-container-lowest border border-outline-variant rounded-md p-6 shadow-sm font-sans space-y-4">
-            <h3 className="font-headline text-base font-bold text-on-surface mb-2">Project Details</h3>
-            <div className="flex justify-between items-center pb-3 border-b border-outline-variant">
-              <span className="text-secondary text-sm">Contract Duration</span>
-              <span className="font-bold text-sm text-on-surface">{computedDuration}</span>
-            </div>
-            <div className="flex justify-between items-center pb-3 border-b border-outline-variant">
-              <span className="text-secondary text-sm">Project Manager</span>
-              <span className="font-bold text-sm text-on-surface">{project.manager}</span>
-            </div>
-            <div className="flex justify-between items-center">
-              <span className="text-secondary text-sm">Priority Level</span>
-              <span className={`px-2.5 py-0.5 rounded-full font-bold text-[10px] uppercase border ${
-                computedPriority === 'High' 
-                  ? 'bg-red-50 text-red-700 border-red-200' 
-                  : computedPriority === 'Medium' 
-                  ? 'bg-amber-50 text-amber-700 border-amber-200' 
-                  : 'bg-secondary/10 text-secondary border-outline-variant'
-              }`}>
-                {computedPriority} Priority
-              </span>
-            </div>
-          </div>
-
-          {/* Financial Health block */}
-          <div className="bg-primary p-6 rounded-md text-white relative overflow-hidden group shadow-sm">
-            <div className="relative z-10">
-              <h4 className="font-headline text-base font-bold">Financial Health</h4>
-              <p className="text-xs opacity-80 mt-1 font-sans">{healthMessage}</p>
-              <div className="mt-6">
-                <span className="text-4xl font-headline font-bold">{computedHealth.toFixed(1)}%</span>
-                <div className="mt-3 w-full bg-white/20 h-2 rounded-full overflow-hidden">
-                  <div className="bg-white h-full rounded-full" style={{ width: `${computedHealth}%` }}></div>
-                </div>
+        {/* Right Section: Sidebar Metadata */}
+        {!isTableExpanded && (
+          <div className="space-y-stack-lg">
+            
+            {/* Project Details block */}
+            <div className="bg-surface-container-lowest border border-outline-variant rounded-md p-6 shadow-sm font-sans space-y-4">
+              <h3 className="font-headline text-base font-bold text-on-surface mb-2">Project Details</h3>
+              <div className="flex justify-between items-center pb-3 border-b border-outline-variant">
+                <span className="text-secondary text-sm">Contract Duration</span>
+                <span className="font-bold text-sm text-on-surface">{computedDuration}</span>
+              </div>
+              <div className="flex justify-between items-center" title={priorityTooltip}>
+                <span className="text-secondary text-sm">Priority Level</span>
+                <span className={`px-2.5 py-0.5 rounded-full font-bold text-[10px] uppercase border cursor-help ${
+                  computedPriority === 'High' 
+                    ? 'bg-red-50 text-red-700 border-red-200' 
+                    : computedPriority === 'Medium' 
+                    ? 'bg-amber-50 text-amber-700 border-amber-200' 
+                    : 'bg-secondary/10 text-secondary border-outline-variant'
+                }`}>
+                  {computedPriority} Priority
+                </span>
               </div>
             </div>
-            <div className="absolute -right-8 -bottom-8 opacity-10 group-hover:scale-110 transition-transform duration-500 pointer-events-none">
-              <Briefcase className="w-36 h-36" />
-            </div>
-          </div>
 
-        </div>
+            {/* Problems in the Project block */}
+            <div className="bg-surface-container-lowest border border-outline-variant rounded-md p-6 shadow-sm font-sans space-y-4">
+              <h3 className="font-headline text-base font-bold text-on-surface mb-2">Problems in the Project</h3>
+              {activeProblems.length === 0 ? (
+                <div className="flex gap-3 items-center p-3 rounded-lg border border-outline-variant bg-surface-container-low/20">
+                  <CheckCircle2 className="w-5 h-5 text-status-success-text shrink-0" />
+                  <div className="space-y-0.5">
+                    <span className="text-xs font-bold text-status-success-text block">No issues detected</span>
+                    <span className="text-[10px] text-secondary block leading-normal">
+                      This project is compliant with automatic risk monitoring rules.
+                    </span>
+                  </div>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {activeProblems.map((prob, idx) => (
+                    <div 
+                      key={idx} 
+                      className="flex gap-3 items-start p-3 rounded-lg border border-error/20 bg-error/5 hover:border-error/40 transition-colors"
+                    >
+                      <AlertTriangle className="w-5 h-5 text-error shrink-0 mt-0.5" />
+                      <div className="space-y-1">
+                        <span className="text-xs font-bold text-on-surface block">{prob.title}</span>
+                        <span className="text-[10px] text-secondary block leading-normal">
+                          {prob.description}
+                        </span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+          </div>
+        )}
       </div>
 
       {/* Notice Modal — two-step modal for vendor bills / client funds notices */}

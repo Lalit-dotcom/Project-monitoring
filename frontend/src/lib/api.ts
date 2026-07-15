@@ -270,14 +270,17 @@ export const api = {
   },
   
   getProjectById: async (id: string): Promise<(Project & DatabaseProject) | undefined> => {
-    const res = await fetchWithAuth(`${API_URL}/api/projects`);
+    const res = await fetchWithAuth(`${API_URL}/api/projects/${encodeURIComponent(id)}`);
+    if (res.status === 404) {
+      return undefined;
+    }
     if (!res.ok) {
-      throw new Error('Failed to fetch projects from server');
+      throw new Error('Failed to fetch project from server');
     }
     const json = await res.json();
-    const projects = json.data.map(mapDbProjectToProject);
-    return projects.find((p: any) => p.id === id);
+    return mapDbProjectToProject(json);
   },
+
 
   getProjectTypes: async (): Promise<string[]> => {
     const res = await fetchWithAuth(`${API_URL}/api/projects/types`);

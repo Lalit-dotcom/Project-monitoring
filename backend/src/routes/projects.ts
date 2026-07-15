@@ -341,6 +341,48 @@ router.get('/check-unique/:projectCd', async (req: Request, res: Response): Prom
   }
 });
 
+router.get('/:projectCd', async (req: Request, res: Response): Promise<void> => {
+  try {
+    const authReq = req as AuthenticatedRequest;
+    const user = authReq.user;
+    const projectCd = String(req.params.projectCd || '').trim();
+
+    // Query Postgres for the specific project
+    const queryText = `
+      SELECT projects.*, project_managers.prj_mgr_name, 
+             ${paymentStatusCaseSql} AS computed_payment_status
+      FROM projects 
+      LEFT JOIN project_managers ON projects.prj_mgr_id = project_managers.prj_mgr_id
+      WHERE projects.project_cd = $1
+    `.trim();
+
+    const result = await pool.query(queryText, [projectCd]);
+
+    if (result.rows.length === 0) {
+      res.status(404).json({ error: 'Project not found' });
+      return;
+    }
+
+    const projectRow = result.rows[0];
+
+    // Enforce own project ownership check for project_manager role if applicable
+    if (user && user.role === 'project_manager') {
+      if (Number(projectRow.prj_mgr_id) !== user.prjMgrId) {
+        res.status(403).json({ error: 'Forbidden: Access to this project is denied' });
+        return;
+      }
+    }
+
+    res.json(mapRowToProject(projectRow));
+  } catch (error: any) {
+    console.error('Database query error:', error);
+    res.status(500).json({
+      error: 'An internal server error occurred while retrieving the project.'
+    });
+  }
+});
+
+
 router.post('/create-with-chain', async (req: Request, res: Response): Promise<void> => {
   const authReq = req as AuthenticatedRequest;
   const user = authReq.user;
