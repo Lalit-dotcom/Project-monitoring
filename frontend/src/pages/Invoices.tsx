@@ -841,7 +841,7 @@ export const Invoices: React.FC = () => {
                 paginatedInvoices.map((inv, i) => (
                   <tr 
                     key={inv.id} 
-                    onClick={() => navigate(`/projects/${inv.projectNo}?tab=invoices`)}
+                    onClick={() => navigate(`/projects/${inv.projectNo}?tab=invoices&highlight=${inv.invoiceNum}`)}
                     className="group hover:bg-surface-container-low transition-colors cursor-pointer animate-row-stagger" 
                     style={{ animationDelay: `${Math.min(i * 20, 400)}ms` }}
                   >

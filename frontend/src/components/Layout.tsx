@@ -83,7 +83,7 @@ export const Layout: React.FC = () => {
     placeholder = "Search by Project No, client or details...";
     action = null;
   } else if (location.pathname.startsWith('/projects/')) {
-    placeholder = "Search invoices in this project...";
+    placeholder = "Search this project's records...";
     action = null;
   } else if (location.pathname === '/bill-desk') {
     placeholder = "Search invoices in bill desk...";
@@ -164,7 +164,7 @@ export const Layout: React.FC = () => {
       >
         {/* Key on pathname so each route gets a fresh fade-in */}
         <div key={location.pathname} className="animate-page-fade">
-          <Outlet context={{ searchQuery, unreadCount, reloadNotifications: loadNotifications, projectsRefreshTrigger: refreshTrigger }} />
+          <Outlet context={{ searchQuery, setSearchQuery, unreadCount, reloadNotifications: loadNotifications, projectsRefreshTrigger: refreshTrigger }} />
         </div>
       </main>
 

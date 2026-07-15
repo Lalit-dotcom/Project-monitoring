@@ -778,7 +778,7 @@ export const TaxInvoices: React.FC = () => {
                 paginatedTxs.map((tx, i) => (
                   <tr 
                     key={tx.id} 
-                    onClick={() => navigate(`/projects/${tx.projectNo}?tab=taxinvoices`)}
+                    onClick={() => navigate(`/projects/${tx.projectNo}?tab=taxinvoices&highlight=${tx.userBillNo}`)}
                     className="group hover:bg-surface-container-low transition-colors cursor-pointer animate-row-stagger" 
                     style={{ animationDelay: `${Math.min(i * 20, 400)}ms` }}
                   >

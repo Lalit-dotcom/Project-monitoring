@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
+import { useParams, useNavigate, useSearchParams, useOutletContext } from 'react-router-dom';
 import { 
   Info, 
   ChevronLeft, 
@@ -17,8 +17,7 @@ import {
   Loader2,
   Bell,
   Maximize2,
-  Minimize2,
-  Search
+  Minimize2
 } from 'lucide-react';
 import {
   ComposedChart,
@@ -44,6 +43,7 @@ export const ProjectDetail: React.FC = () => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const { theme } = useTheme();
+  const { searchQuery, setSearchQuery } = useOutletContext<{ searchQuery: string; setSearchQuery?: (val: string) => void }>();
 
   const [project, setProject] = useState<(Project & DatabaseProject) | null>(null);
   const [invoices, setInvoices] = useState<Invoice[]>([]);
@@ -62,7 +62,6 @@ export const ProjectDetail: React.FC = () => {
   const [rowsPerPage, setRowsPerPage] = useState(5);
   const [isTableExpanded, setIsTableExpanded] = useState(false);
   const [showRowsPerPagePopover, setShowRowsPerPagePopover] = useState(false);
-  const [tabSearchQuery, setTabSearchQuery] = useState('');
   const rowsPerPageDropdownRef = useRef<HTMLDivElement>(null);
   const rowsPerPageButtonRef = useRef<HTMLButtonElement>(null);
 
@@ -136,12 +135,9 @@ export const ProjectDetail: React.FC = () => {
     const paramVal = tab.toLowerCase().replace(/\s+/g, '-');
     setSearchParams({ tab: paramVal }, { replace: true });
     setCurrentPage(1);
-    setTabSearchQuery('');
-  };
-
-  const handleSearchChange = (val: string) => {
-    setTabSearchQuery(val);
-    setCurrentPage(1);
+    if (setSearchQuery) {
+      setSearchQuery('');
+    }
   };
 
   useEffect(() => {
@@ -435,25 +431,72 @@ export const ProjectDetail: React.FC = () => {
 
   const derivedActivities = getDerivedActivities();
 
-  // Filter lists based on tab-scoped search query
+  // Filter lists based on global search query from layout context
   const filteredInvoices = invoices.filter(i => 
-    String(i.invoiceNum || '').toLowerCase().includes(tabSearchQuery.toLowerCase()) ||
-    String(i.vendorName || '').toLowerCase().includes(tabSearchQuery.toLowerCase())
+    String(i.invoiceNum || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
+    String(i.vendorName || '').toLowerCase().includes(searchQuery.toLowerCase())
   );
 
   const filteredPOs = purchaseOrders.filter(po => 
-    String(po.finalPoNo || '').toLowerCase().includes(tabSearchQuery.toLowerCase()) ||
-    String(po.vendorName || '').toLowerCase().includes(tabSearchQuery.toLowerCase())
+    String(po.finalPoNo || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
+    String(po.vendorName || '').toLowerCase().includes(searchQuery.toLowerCase())
   );
 
   const filteredTxs = taxInvoices.filter(tx => 
-    String(tx.userBillNo || '').toLowerCase().includes(tabSearchQuery.toLowerCase())
+    String(tx.userBillNo || '').toLowerCase().includes(searchQuery.toLowerCase())
   );
 
   const filteredBillDesk = billDesk.filter(b => 
-    String(b.invoiceNo || '').toLowerCase().includes(tabSearchQuery.toLowerCase()) ||
-    String(b.vendorName || '').toLowerCase().includes(tabSearchQuery.toLowerCase())
+    String(b.invoiceNo || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
+    String(b.vendorName || '').toLowerCase().includes(searchQuery.toLowerCase())
   );
+
+  // Reset page to 1 and clear highlight when searchQuery changes
+  const prevSearchQueryRef = useRef(searchQuery);
+  useEffect(() => {
+    if (prevSearchQueryRef.current !== searchQuery) {
+      setCurrentPage(1);
+      if (searchParams.has('highlight')) {
+        const newParams = new URLSearchParams(searchParams);
+        newParams.delete('highlight');
+        setSearchParams(newParams, { replace: true });
+      }
+      prevSearchQueryRef.current = searchQuery;
+    }
+  }, [searchQuery, searchParams, setSearchParams]);
+
+  // Programmatic jump to page and scroll into view for highlighted row
+  const highlight = searchParams.get('highlight');
+  const lastProcessedHighlightRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    if (!highlight || highlight === lastProcessedHighlightRef.current) return;
+
+    let matchedIndex = -1;
+
+    if (activeTab === 'Invoices' && invoices.length > 0) {
+      matchedIndex = filteredInvoices.findIndex(i => String(i.invoiceNum || '') === highlight);
+    } else if (activeTab === 'Purchase Orders' && purchaseOrders.length > 0) {
+      matchedIndex = filteredPOs.findIndex(po => String(po.finalPoNo || '') === highlight);
+    } else if (activeTab === 'Tax Invoices' && taxInvoices.length > 0) {
+      matchedIndex = filteredTxs.findIndex(tx => String(tx.userBillNo || '') === highlight);
+    } else if (activeTab === 'Bill Desk' && billDesk.length > 0) {
+      matchedIndex = filteredBillDesk.findIndex(b => String(b.invoiceNo || '') === highlight);
+    }
+
+    if (matchedIndex !== -1) {
+      lastProcessedHighlightRef.current = highlight;
+      const targetPage = Math.floor(matchedIndex / rowsPerPage) + 1;
+      setCurrentPage(targetPage);
+
+      setTimeout(() => {
+        const element = document.getElementById(`row-highlight-${highlight}`);
+        if (element) {
+          element.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }
+      }, 200);
+    }
+  }, [highlight, activeTab, invoices, purchaseOrders, taxInvoices, billDesk, filteredInvoices, filteredPOs, filteredTxs, filteredBillDesk, rowsPerPage]);
 
   const getBillDeskStatusClasses = (status: string | null | undefined) => {
     if (!status) return 'bg-status-neutral-bg text-status-neutral-text border-status-neutral-border';
@@ -478,6 +521,11 @@ export const ProjectDetail: React.FC = () => {
     const maxPage = Math.ceil(totalItems / rowsPerPage);
     if (pageNum >= 1 && pageNum <= maxPage) {
       setCurrentPage(pageNum);
+      if (searchParams.has('highlight')) {
+        const newParams = new URLSearchParams(searchParams);
+        newParams.delete('highlight');
+        setSearchParams(newParams, { replace: true });
+      }
     }
   };
 
@@ -524,6 +572,11 @@ export const ProjectDetail: React.FC = () => {
                         setRowsPerPage(option);
                         setCurrentPage(1);
                         setShowRowsPerPagePopover(false);
+                        if (searchParams.has('highlight')) {
+                          const newParams = new URLSearchParams(searchParams);
+                          newParams.delete('highlight');
+                          setSearchParams(newParams, { replace: true });
+                        }
                       }}
                       className={`w-full text-center px-3 py-1.5 text-xs font-semibold hover:bg-surface-container-low transition-colors ${
                         rowsPerPage === option ? 'text-primary bg-primary/5 font-bold' : 'text-on-surface'
@@ -773,21 +826,8 @@ export const ProjectDetail: React.FC = () => {
                 ))}
               </div>
               
-              {/* Right side container: search box + expand/collapse button */}
+              {/* Right side container: expand/collapse button */}
               <div className="ml-auto flex items-center gap-3">
-                {activeTab !== 'Overview' && (
-                  <div className="relative">
-                    <Search className="w-3.5 h-3.5 text-secondary absolute left-2.5 top-1/2 -translate-y-1/2" />
-                    <input
-                      type="text"
-                      placeholder={`Search ${activeTab}...`}
-                      value={tabSearchQuery}
-                      onChange={(e) => handleSearchChange(e.target.value)}
-                      className="h-8 pl-8 pr-3 text-xs border border-outline-variant hover:border-outline focus:border-primary focus:outline-none rounded-md bg-white w-40 md:w-56 font-sans transition-all"
-                    />
-                  </div>
-                )}
-                
                 {/* Expand / Collapse Button */}
                 <button
                   onClick={() => setIsTableExpanded(!isTableExpanded)}
@@ -828,8 +868,13 @@ export const ProjectDetail: React.FC = () => {
                       ) : (
                         paginate(filteredInvoices).map((inv) => {
                           const status = inv.unpaid && inv.unpaid > 0 ? 'Pending' : 'Paid';
+                          const isHighlighted = highlight === inv.invoiceNum;
                           return (
-                            <tr key={inv.id} className="hover:bg-surface transition-colors group">
+                            <tr 
+                              key={inv.id} 
+                              id={`row-highlight-${inv.invoiceNum}`}
+                              className={`transition-all duration-300 group ${isHighlighted ? 'bg-amber-100 dark:bg-amber-950/40 border-y border-amber-300 shadow-sm' : 'hover:bg-surface'}`}
+                            >
                               <td className="px-6 py-4">
                                 <div className="flex items-center gap-3">
                                   <div className="w-8 h-8 rounded bg-primary/5 flex items-center justify-center text-primary">
@@ -887,20 +932,27 @@ export const ProjectDetail: React.FC = () => {
                           <td colSpan={5} className="px-6 py-8 text-center text-secondary font-headline">No purchase orders linked to this project.</td>
                         </tr>
                       ) : (
-                        paginate(filteredPOs).map((po) => (
-                          <tr key={po.id} className="hover:bg-surface transition-colors">
-                            <td className="px-6 py-4 font-headline text-sm font-semibold text-primary dont-translate bhashini-skip-translation">{po.finalPoNo || po.id}</td>
-                            <td className="px-6 py-4 text-secondary text-sm">{formatDate(po.poDate)}</td>
-                            <td className="px-6 py-4 font-sans text-sm font-medium">{po.vendorName}</td>
-                            <td className="px-6 py-4 text-right font-headline text-base font-bold text-on-surface dont-translate bhashini-skip-translation">{formatINR(po.total, false)}</td>
-                            <td className="px-6 py-4">
-                              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-status-success-bg text-status-success-text font-bold text-[10px] border border-status-success-border uppercase">
-                                <span className="w-1.5 h-1.5 rounded-full bg-status-success-text" />
-                                {po.approvalStatus}
-                              </span>
-                            </td>
-                          </tr>
-                        ))
+                        paginate(filteredPOs).map((po) => {
+                          const isHighlighted = highlight === po.finalPoNo;
+                          return (
+                            <tr 
+                              key={po.id} 
+                              id={`row-highlight-${po.finalPoNo}`}
+                              className={`transition-all duration-300 ${isHighlighted ? 'bg-amber-100 dark:bg-amber-950/40 border-y border-amber-300 shadow-sm' : 'hover:bg-surface'}`}
+                            >
+                              <td className="px-6 py-4 font-headline text-sm font-semibold text-primary dont-translate bhashini-skip-translation">{po.finalPoNo || po.id}</td>
+                              <td className="px-6 py-4 text-secondary text-sm">{formatDate(po.poDate)}</td>
+                              <td className="px-6 py-4 font-sans text-sm font-medium">{po.vendorName}</td>
+                              <td className="px-6 py-4 text-right font-headline text-base font-bold text-on-surface dont-translate bhashini-skip-translation">{formatINR(po.total, false)}</td>
+                              <td className="px-6 py-4">
+                                <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-status-success-bg text-status-success-text font-bold text-[10px] border border-status-success-border uppercase">
+                                  <span className="w-1.5 h-1.5 rounded-full bg-status-success-text" />
+                                  {po.approvalStatus}
+                                </span>
+                              </td>
+                            </tr>
+                          );
+                        })
                       )}
                     </tbody>
                   </table>
@@ -927,22 +979,29 @@ export const ProjectDetail: React.FC = () => {
                           <td colSpan={5} className="px-6 py-8 text-center text-secondary font-headline">No tax invoices generated for this project.</td>
                         </tr>
                       ) : (
-                        paginate(filteredTxs).map((tx) => (
-                          <tr key={tx.id} className="hover:bg-surface transition-colors">
-                            <td className="px-6 py-4 font-headline text-sm font-semibold text-primary dont-translate bhashini-skip-translation">{tx.userBillNo || tx.id}</td>
-                            <td className="px-6 py-4 text-secondary text-sm">{formatDate(tx.billDate)}</td>
-                            <td className="px-6 py-4 font-sans text-sm text-secondary dont-translate bhashini-skip-translation">{tx.poNo}</td>
-                            <td className="px-6 py-4 text-right font-headline text-base font-bold text-on-surface dont-translate bhashini-skip-translation">{formatINR(tx.totalAmount, false)}</td>
-                            <td className="px-6 py-4">
-                              <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider border ${
-                                tx.billStatus === 'FINAL' ? 'bg-status-success-bg text-status-success-text border-status-success-border' : 'bg-status-warning-bg text-status-warning-text border-status-warning-border'
-                              }`}>
-                                <span className={`w-1.5 h-1.5 rounded-full ${tx.billStatus === 'FINAL' ? 'bg-status-success-text' : 'bg-status-warning-text'}`} />
-                                {tx.billStatus}
-                              </span>
-                            </td>
-                          </tr>
-                        ))
+                        paginate(filteredTxs).map((tx) => {
+                          const isHighlighted = highlight === tx.userBillNo;
+                          return (
+                            <tr 
+                              key={tx.id} 
+                              id={`row-highlight-${tx.userBillNo}`}
+                              className={`transition-all duration-300 ${isHighlighted ? 'bg-amber-100 dark:bg-amber-950/40 border-y border-amber-300 shadow-sm' : 'hover:bg-surface'}`}
+                            >
+                              <td className="px-6 py-4 font-headline text-sm font-semibold text-primary dont-translate bhashini-skip-translation">{tx.userBillNo || tx.id}</td>
+                              <td className="px-6 py-4 text-secondary text-sm">{formatDate(tx.billDate)}</td>
+                              <td className="px-6 py-4 font-sans text-sm text-secondary dont-translate bhashini-skip-translation">{tx.poNo}</td>
+                              <td className="px-6 py-4 text-right font-headline text-base font-bold text-on-surface dont-translate bhashini-skip-translation">{formatINR(tx.totalAmount, false)}</td>
+                              <td className="px-6 py-4">
+                                <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider border ${
+                                  tx.billStatus === 'FINAL' ? 'bg-status-success-bg text-status-success-text border-status-success-border' : 'bg-status-warning-bg text-status-warning-text border-status-warning-border'
+                                }`}>
+                                  <span className={`w-1.5 h-1.5 rounded-full ${tx.billStatus === 'FINAL' ? 'bg-status-success-text' : 'bg-status-warning-text'}`} />
+                                  {tx.billStatus}
+                                </span>
+                              </td>
+                            </tr>
+                          );
+                        })
                       )}
                     </tbody>
                   </table>
@@ -1081,22 +1140,29 @@ export const ProjectDetail: React.FC = () => {
                           <td colSpan={7} className="px-6 py-8 text-center text-secondary font-headline">No bill desk records found for this project.</td>
                         </tr>
                       ) : (
-                        paginate(filteredBillDesk).map((b) => (
-                          <tr key={b.id} className="hover:bg-surface transition-colors">
-                            <td className="px-6 py-4 font-headline text-sm font-semibold text-primary dont-translate bhashini-skip-translation">{b.invoiceNo || b.id}</td>
-                            <td className="px-6 py-4 text-secondary text-sm" title={b.vendorName || ''}>{b.vendorName || '-'}</td>
-                            <td className="px-6 py-4 text-secondary text-sm">{b.billMonth || '-'}</td>
-                            <td className="px-6 py-4 text-secondary text-sm">{formatDate(b.invoiceDate)}</td>
-                            <td className="px-6 py-4 text-right font-headline text-base font-bold text-on-surface dont-translate bhashini-skip-translation">{formatINR(b.invoiceAmount || 0, false)}</td>
-                            <td className="px-6 py-4 text-right font-headline text-base font-bold text-on-surface dont-translate bhashini-skip-translation">{formatINR(b.amountPaid || 0, false)}</td>
-                            <td className="px-6 py-4">
-                              <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider border ${getBillDeskStatusClasses(b.status)}`}>
-                                <span className="w-1.5 h-1.5 rounded-full bg-current" />
-                                {b.status || 'Unknown'}
-                              </span>
-                            </td>
-                          </tr>
-                        ))
+                        paginate(filteredBillDesk).map((b) => {
+                          const isHighlighted = highlight === b.invoiceNo;
+                          return (
+                            <tr 
+                              key={b.id} 
+                              id={`row-highlight-${b.invoiceNo}`}
+                              className={`transition-all duration-300 ${isHighlighted ? 'bg-amber-100 dark:bg-amber-950/40 border-y border-amber-300 shadow-sm' : 'hover:bg-surface'}`}
+                            >
+                              <td className="px-6 py-4 font-headline text-sm font-semibold text-primary dont-translate bhashini-skip-translation">{b.invoiceNo || b.id}</td>
+                              <td className="px-6 py-4 text-secondary text-sm" title={b.vendorName || ''}>{b.vendorName || '-'}</td>
+                              <td className="px-6 py-4 text-secondary text-sm">{b.billMonth || '-'}</td>
+                              <td className="px-6 py-4 text-secondary text-sm">{formatDate(b.invoiceDate)}</td>
+                              <td className="px-6 py-4 text-right font-headline text-base font-bold text-on-surface dont-translate bhashini-skip-translation">{formatINR(b.invoiceAmount || 0, false)}</td>
+                              <td className="px-6 py-4 text-right font-headline text-base font-bold text-on-surface dont-translate bhashini-skip-translation">{formatINR(b.amountPaid || 0, false)}</td>
+                              <td className="px-6 py-4">
+                                <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider border ${getBillDeskStatusClasses(b.status)}`}>
+                                  <span className="w-1.5 h-1.5 rounded-full bg-current" />
+                                  {b.status || 'Unknown'}
+                                </span>
+                              </td>
+                            </tr>
+                          );
+                        })
                       )}
                     </tbody>
                   </table>

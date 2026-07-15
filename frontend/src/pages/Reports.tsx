@@ -1011,7 +1011,7 @@ export const Reports: React.FC = () => {
                       {getSortedRows(reportData).map((po: any, idx: number) => (
                         <tr 
                           key={idx} 
-                          onClick={() => navigate(`/projects/${po.project_no}?tab=purchaseorders`)}
+                          onClick={() => navigate(`/projects/${po.project_no}?tab=purchaseorders&highlight=${po.final_po_no || po.po_no}`)}
                           className="hover:bg-surface-container-lowest transition-colors group cursor-pointer"
                         >
                           {/* Pinned leftmost: PO Number */}
@@ -1098,7 +1098,7 @@ export const Reports: React.FC = () => {
                       {getSortedRows(reportData).map((inv: any, idx: number) => (
                         <tr 
                           key={idx} 
-                          onClick={() => navigate(`/projects/${inv.project_no}?tab=invoices`)}
+                          onClick={() => navigate(`/projects/${inv.project_no}?tab=invoices&highlight=${inv.invoice_num}`)}
                           className="hover:bg-surface-container-lowest transition-colors group cursor-pointer"
                         >
                           {/* Pinned leftmost: Invoice # */}
@@ -1197,7 +1197,7 @@ export const Reports: React.FC = () => {
                       {getSortedRows(reportData).map((inv: any, idx: number) => (
                         <tr 
                           key={idx} 
-                          onClick={() => navigate(`/projects/${inv.project_no}?tab=invoices`)}
+                          onClick={() => navigate(`/projects/${inv.project_no}?tab=invoices&highlight=${inv.invoice_num}`)}
                           className="hover:bg-surface-container-lowest transition-colors group cursor-pointer"
                         >
                           {/* Pinned leftmost: Invoice # */}

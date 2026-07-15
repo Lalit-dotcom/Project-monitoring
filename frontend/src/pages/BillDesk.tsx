@@ -797,7 +797,7 @@ export const BillDesk: React.FC = () => {
                 paginatedBills.map((b, i) => (
                   <tr 
                     key={b.id} 
-                    onClick={() => navigate(`/projects/${b.projectNo}?tab=billdesk`)}
+                    onClick={() => navigate(`/projects/${b.projectNo}?tab=billdesk&highlight=${b.invoiceNo}`)}
                     className="group hover:bg-surface-container-low transition-colors cursor-pointer animate-row-stagger" 
                     style={{ animationDelay: `${Math.min(i * 20, 400)}ms` }}
                   >
