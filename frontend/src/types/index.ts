@@ -134,7 +134,8 @@ export interface Notification {
 
 export interface User {
   id: string;
-  name: string;
+  username: string;
+  name: string | null;
   email: string;
   role: string;
   status: 'Active' | 'Inactive';

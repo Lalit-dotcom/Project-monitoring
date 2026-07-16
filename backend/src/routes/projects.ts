@@ -101,6 +101,22 @@ router.get('/types', async (req: Request, res: Response): Promise<void> => {
   }
 });
 
+// Get distinct customer names
+router.get('/customers', async (req: Request, res: Response): Promise<void> => {
+  try {
+    const result = await pool.query(
+      "SELECT DISTINCT customer_name FROM projects WHERE customer_name IS NOT NULL AND customer_name != '' ORDER BY customer_name ASC"
+    );
+    const customers = result.rows.map(row => row.customer_name);
+    res.json(customers);
+  } catch (error: any) {
+    console.error('Database query error:', error);
+    res.status(500).json({
+      error: 'An internal server error occurred while retrieving customer names.'
+    });
+  }
+});
+
 // Get project managers
 router.get('/managers', async (req: Request, res: Response): Promise<void> => {
   try {
@@ -215,6 +231,14 @@ router.get('/', async (req: Request, res: Response): Promise<void> => {
     if (projectType && typeof projectType === 'string' && projectType !== 'All' && projectType.trim() !== '') {
       conditions.push(`prj_type = $${paramIndex}`);
       values.push(projectType.trim());
+      paramIndex++;
+    }
+
+    // Customer Name condition
+    const customerName = req.query.customerName;
+    if (customerName && typeof customerName === 'string' && customerName.trim() !== '') {
+      conditions.push(`customer_name ILIKE $${paramIndex}`);
+      values.push(`%${customerName.trim()}%`);
       paramIndex++;
     }
 

@@ -159,6 +159,7 @@ export interface ProjectFilters {
   search?: string;
   paymentStatus?: string;
   projectType?: string;
+  customerName?: string;
   sortBy?: string;
   sortOrder?: string;
   amountField?: string;
@@ -286,6 +287,14 @@ export const api = {
     const res = await fetchWithAuth(`${API_URL}/api/projects/types`);
     if (!res.ok) {
       throw new Error('Failed to fetch project types');
+    }
+    return res.json();
+  },
+
+  getCustomerNames: async (): Promise<string[]> => {
+    const res = await fetchWithAuth(`${API_URL}/api/projects/customers`);
+    if (!res.ok) {
+      throw new Error('Failed to fetch customer names');
     }
     return res.json();
   },
@@ -581,18 +590,32 @@ export const api = {
   },
 
   // DASHBOARD METRICS
-  getDashboardMetrics: async (): Promise<any> => {
-    const res = await fetchWithAuth(`${API_URL}/api/dashboard/summary`);
+  getDashboardMetrics: async (prjMgrId?: number | null): Promise<any> => {
+    const params = new URLSearchParams();
+    if (prjMgrId != null) params.set('prjMgrId', String(prjMgrId));
+    const res = await fetchWithAuth(`${API_URL}/api/dashboard/summary?${params.toString()}`);
     if (!res.ok) {
       throw new Error('Failed to fetch dashboard metrics');
     }
     return res.json();
   },
 
-  getDashboardCharts: async (): Promise<any[]> => {
-    const res = await fetchWithAuth(`${API_URL}/api/dashboard/charts`);
+  getDashboardCharts: async (prjMgrId?: number | null): Promise<any[]> => {
+    const params = new URLSearchParams();
+    if (prjMgrId != null) params.set('prjMgrId', String(prjMgrId));
+    const res = await fetchWithAuth(`${API_URL}/api/dashboard/charts?${params.toString()}`);
     if (!res.ok) {
       throw new Error('Failed to fetch dashboard charts');
+    }
+    return res.json();
+  },
+
+  getDashboardProblemProjects: async (prjMgrId?: number | null): Promise<any[]> => {
+    const params = new URLSearchParams();
+    if (prjMgrId != null) params.set('prjMgrId', String(prjMgrId));
+    const res = await fetchWithAuth(`${API_URL}/api/dashboard/problem-projects?${params.toString()}`);
+    if (!res.ok) {
+      throw new Error('Failed to fetch problem projects');
     }
     return res.json();
   },
@@ -628,6 +651,26 @@ export const api = {
     if (prjMgrId != null) params.set('prjMgrId', String(prjMgrId));
     const res = await fetchWithAuth(`${API_URL}/api/dashboard/risks/invoices?${params.toString()}`);
     if (!res.ok) throw new Error('Failed to fetch invoice risks');
+    return res.json();
+  },
+
+  getDashboardOverdueInvoices: async (prjMgrId?: number | null): Promise<any[]> => {
+    const params = new URLSearchParams();
+    if (prjMgrId != null) params.set('prjMgrId', String(prjMgrId));
+    const res = await fetchWithAuth(`${API_URL}/api/dashboard/overdue-invoices?${params.toString()}`);
+    if (!res.ok) {
+      throw new Error('Failed to fetch dashboard overdue invoices');
+    }
+    return res.json();
+  },
+
+  getDashboardExpiredPos: async (prjMgrId?: number | null): Promise<any[]> => {
+    const params = new URLSearchParams();
+    if (prjMgrId != null) params.set('prjMgrId', String(prjMgrId));
+    const res = await fetchWithAuth(`${API_URL}/api/dashboard/expired-pos?${params.toString()}`);
+    if (!res.ok) {
+      throw new Error('Failed to fetch dashboard expired POs');
+    }
     return res.json();
   },
 

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Shield, Key, Settings, UserPlus, MoreVertical } from 'lucide-react';
+import { Shield, Key, Settings, UserPlus } from 'lucide-react';
 import { useOutletContext } from 'react-router-dom';
 import { api } from '../lib/api';
 import type { User } from '../types';
@@ -117,46 +117,45 @@ export const Administration: React.FC = () => {
                       <th className="px-6 py-4 font-headline text-xs font-bold text-secondary uppercase tracking-wider">Email Address</th>
                       <th className="px-6 py-4 font-headline text-xs font-bold text-secondary uppercase tracking-wider">Assigned Role</th>
                       <th className="px-6 py-4 font-headline text-xs font-bold text-secondary uppercase tracking-wider">Status</th>
-                      <th className="px-6 py-4 w-12"></th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-outline-variant">
                     {filteredUsers.length === 0 ? (
                       <tr>
-                        <td colSpan={5} className="px-6 py-10 text-center text-secondary text-sm">
+                        <td colSpan={4} className="px-6 py-10 text-center text-secondary text-sm">
                           No users match your search.
                         </td>
                       </tr>
-                    ) : filteredUsers.map((user) => (
-                      <tr key={user.id} className="hover:bg-surface transition-colors">
-                        <td className="px-6 py-4">
-                          <div className="flex items-center gap-3">
-                            <div className="w-8 h-8 rounded-full bg-primary/10 text-primary flex items-center justify-center font-bold text-xs uppercase">
-                              {user.name.substring(0, 2)}
+                    ) : filteredUsers.map((user) => {
+                      const displayName = user.name || user.username;
+                      return (
+                        <tr key={user.id} className="hover:bg-surface transition-colors">
+                          <td className="px-6 py-4">
+                            <div className="flex items-center gap-3">
+                              <div className="w-8 h-8 rounded-full bg-primary/10 text-primary flex items-center justify-center font-bold text-xs uppercase">
+                                {displayName.substring(0, 2)}
+                              </div>
+                              <span className="font-semibold text-sm text-on-surface">{displayName}</span>
                             </div>
-                            <span className="font-semibold text-sm text-on-surface">{user.name}</span>
-                          </div>
-                        </td>
-                        <td className="px-6 py-4 text-secondary text-sm">{user.email}</td>
-                        <td className="px-6 py-4">
-                          <span className="px-2.5 py-0.5 rounded-full text-xs font-semibold bg-secondary/15 text-on-secondary-container">
-                            {user.role}
-                          </span>
-                        </td>
-                        <td className="px-6 py-4">
-                          <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold border uppercase tracking-wider ${
-                            user.status === 'Active' 
-                              ? 'bg-status-success-bg text-status-success-text border-status-success-border' 
-                              : 'bg-status-neutral-bg text-status-neutral-text border-status-neutral-border'
-                          }`}>
-                            {user.status}
-                          </span>
-                        </td>
-                        <td className="px-6 py-4 text-right">
-                          <button className="text-secondary hover:text-primary"><MoreVertical className="w-5 h-5" /></button>
-                        </td>
-                      </tr>
-                    ))}
+                          </td>
+                          <td className="px-6 py-4 text-secondary text-sm">{user.email}</td>
+                          <td className="px-6 py-4">
+                            <span className="px-2.5 py-0.5 rounded-full text-xs font-semibold bg-secondary/15 text-on-secondary-container">
+                              {user.role}
+                            </span>
+                          </td>
+                          <td className="px-6 py-4">
+                            <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold border uppercase tracking-wider ${
+                              user.status === 'Active' 
+                                ? 'bg-status-success-bg text-status-success-text border-status-success-border' 
+                                : 'bg-status-neutral-bg text-status-neutral-text border-status-neutral-border'
+                            }`}>
+                              {user.status}
+                            </span>
+                          </td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>

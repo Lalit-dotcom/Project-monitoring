@@ -432,7 +432,12 @@ async function seed() {
       projectNo,
       parseNumeric(row.PRJ_MGR_ID),
       cleanString(row.FINAL_PO_NO),
-      cleanString(row.BILL_MONTH),
+      cleanString(row.BILL_MONTH) || (row.INVOICE_DATE ? (() => {
+        const parsedDate = parseExcelDate(row.INVOICE_DATE);
+        if (!parsedDate) return null;
+        const dObj = new Date(parsedDate);
+        return dObj.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+      })() : null),
       parseNumeric(row.VENDOR_ID),
       cleanString(row.VENDOR_NAME),
       cleanString(row.INVOICE_NO),

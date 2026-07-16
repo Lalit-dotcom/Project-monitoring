@@ -10,7 +10,8 @@ import {
   Smartphone, 
   UserCheck, 
   RefreshCw, 
-  Lock
+  Lock,
+  Loader2
 } from 'lucide-react';
 import { api } from '../lib/api';
 import { useAuth } from '../context/AuthContext';
@@ -43,6 +44,7 @@ export const Settings: React.FC = () => {
   const [passwordForDisable, setPasswordForDisable] = useState('');
   const [showDisableModal, setShowDisableModal] = useState(false);
   const [checking2FA, setChecking2FA] = useState(true);
+  const [isSettingUp, setIsSettingUp] = useState(false);
 
   // Dialog states
   const [revokeSessionId, setRevokeSessionId] = useState<number | null>(null);
@@ -107,6 +109,8 @@ export const Settings: React.FC = () => {
   };
 
   const handleSetup2FA = async () => {
+    if (isSettingUp) return;
+    setIsSettingUp(true);
     try {
       const data = await api.setup2FA();
       setQrCodeUrl(data.qrCodeDataUrl);
@@ -115,6 +119,8 @@ export const Settings: React.FC = () => {
       setVerificationCode('');
     } catch (err: any) {
       toast.error(err.message || 'Failed to initialize 2FA');
+    } finally {
+      setIsSettingUp(false);
     }
   };
 
@@ -235,9 +241,17 @@ export const Settings: React.FC = () => {
                     </p>
                     <button
                       onClick={handleSetup2FA}
-                      className="px-4 py-2.5 bg-primary hover:bg-primary-container text-white text-xs font-bold font-headline rounded-lg shadow-sm transition-colors"
+                      disabled={isSettingUp}
+                      className="px-4 py-2.5 bg-primary hover:bg-primary-container text-white text-xs font-bold font-headline rounded-lg shadow-sm transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
                     >
-                      Enable Two-Factor Authentication
+                      {isSettingUp ? (
+                        <>
+                          <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                          <span>Initializing Setup...</span>
+                        </>
+                      ) : (
+                        <span>Enable Two-Factor Authentication</span>
+                      )}
                     </button>
                   </div>
                 )}

@@ -39,7 +39,7 @@ export const Projects: React.FC = () => {
   const search = searchParams.get('search') || '';
   const prjMgrId = searchParams.get('prjMgrId') || 'All';
   const paymentStatus = searchParams.get('paymentStatus') || 'All';
-  const projectType = searchParams.get('projectType') || 'All';
+  const customerName = searchParams.get('customerName') || '';
   const sortBy = searchParams.get('sortBy') || 'created_on';
   const sortOrder = searchParams.get('sortOrder') || 'desc';
   const amountField = searchParams.get('amountField') || 'po_amount';
@@ -60,7 +60,7 @@ export const Projects: React.FC = () => {
 
   // Component local states
   const [projects, setProjects] = useState<(Project & DatabaseProject)[]>([]);
-  const [projectTypes, setProjectTypes] = useState<string[]>([]);
+  const [customers, setCustomers] = useState<string[]>([]);
   const [projectManagers, setProjectManagers] = useState<{ prjMgrId: number; prjMgrName: string }[]>([]);
   const [summary, setSummary] = useState<{
     totalProjects: number;
@@ -99,7 +99,7 @@ export const Projects: React.FC = () => {
         search,
         prjMgrId: prjMgrId === 'All' ? undefined : prjMgrId,
         paymentStatus: paymentStatus === 'All' ? undefined : (paymentStatus === 'Fully Paid' ? 'fully_paid' : paymentStatus === 'Partially Paid' ? 'partially_paid' : 'no_invoices'),
-        projectType: projectType === 'All' ? undefined : projectType,
+        customerName: customerName || undefined,
         sortBy,
         sortOrder,
         amountField,
@@ -132,8 +132,9 @@ export const Projects: React.FC = () => {
 
   // Local Filter Popover Inputs
   const [localPrjMgrId, setLocalPrjMgrId] = useState(prjMgrId);
+  const [localPrjMgrNameInput, setLocalPrjMgrNameInput] = useState('');
   const [localPaymentStatus, setLocalPaymentStatus] = useState(paymentStatus);
-  const [localProjectType, setLocalProjectType] = useState(projectType);
+  const [localCustomerName, setLocalCustomerName] = useState(customerName);
   const [localAmountField, setLocalAmountField] = useState(amountField);
   const [localMinAmount, setLocalMinAmount] = useState(minAmount);
   const [localMaxAmount, setLocalMaxAmount] = useState(maxAmount);
@@ -211,11 +212,11 @@ export const Projects: React.FC = () => {
   useEffect(() => {
     const loadDistinctData = async () => {
       try {
-        const [types, managers] = await Promise.all([
-          api.getProjectTypes(),
+        const [names, managers] = await Promise.all([
+          api.getCustomerNames(),
           api.getProjectManagers()
         ]);
-        setProjectTypes(types);
+        setCustomers(names);
         setProjectManagers(managers);
       } catch (err) {
         console.error('Failed to load filter option values:', err);
@@ -256,8 +257,10 @@ export const Projects: React.FC = () => {
   // Sync popover inputs when URL parameters are modified or popover opens/closes
   useEffect(() => {
     setLocalPrjMgrId(prjMgrId);
+    const mgr = projectManagers.find(m => String(m.prjMgrId) === String(prjMgrId));
+    setLocalPrjMgrNameInput(mgr ? mgr.prjMgrName : '');
     setLocalPaymentStatus(paymentStatus);
-    setLocalProjectType(projectType);
+    setLocalCustomerName(customerName);
     setLocalAmountField(amountField);
     setLocalMinAmount(minAmount);
     setLocalMaxAmount(maxAmount);
@@ -270,7 +273,7 @@ export const Projects: React.FC = () => {
     setLocalRiskStalled(riskStalled);
     setLocalSortBy(sortBy);
     setLocalSortOrder(sortOrder);
-  }, [searchParams, showFilterPopover]);
+  }, [searchParams, showFilterPopover, projectManagers]);
 
   // Debounce search inputs (300ms)
   useEffect(() => {
@@ -293,7 +296,7 @@ export const Projects: React.FC = () => {
           search,
           prjMgrId: prjMgrId === 'All' ? undefined : prjMgrId,
           paymentStatus: paymentStatus === 'All' ? undefined : (paymentStatus === 'Fully Paid' ? 'fully_paid' : paymentStatus === 'Partially Paid' ? 'partially_paid' : 'no_invoices'),
-          projectType: projectType === 'All' ? undefined : projectType,
+          customerName: customerName || undefined,
           sortBy,
           sortOrder,
           amountField,
@@ -323,7 +326,7 @@ export const Projects: React.FC = () => {
       }
     };
     fetchProjects();
-  }, [search, prjMgrId, paymentStatus, projectType, sortBy, sortOrder, amountField, minAmount, maxAmount, dateFrom, dateTo, noPoYet, taxInvoiceOutstanding, riskVendorOverpaid, riskBillingAhead, riskStalled, page, pageSize, projectsRefreshTrigger]);
+  }, [search, prjMgrId, paymentStatus, customerName, sortBy, sortOrder, amountField, minAmount, maxAmount, dateFrom, dateTo, noPoYet, taxInvoiceOutstanding, riskVendorOverpaid, riskBillingAhead, riskStalled, page, pageSize, projectsRefreshTrigger]);
 
   // Helper to synchronize URL parameters
   const updateFilters = (updates: Record<string, any>) => {
@@ -342,7 +345,7 @@ export const Projects: React.FC = () => {
     updateFilters({
       prjMgrId: localPrjMgrId,
       paymentStatus: localPaymentStatus,
-      projectType: localProjectType,
+      customerName: localCustomerName,
       amountField: localAmountField,
       minAmount: localMinAmount,
       maxAmount: localMaxAmount,
@@ -360,8 +363,9 @@ export const Projects: React.FC = () => {
 
   const handleResetFilters = () => {
     setLocalPrjMgrId('All');
+    setLocalPrjMgrNameInput('');
     setLocalPaymentStatus('All');
-    setLocalProjectType('All');
+    setLocalCustomerName('');
     setLocalAmountField('po_amount');
     setLocalMinAmount('');
     setLocalMaxAmount('');
@@ -376,7 +380,7 @@ export const Projects: React.FC = () => {
     updateFilters({
       prjMgrId: undefined,
       paymentStatus: undefined,
-      projectType: undefined,
+      customerName: undefined,
       amountField: undefined,
       minAmount: undefined,
       maxAmount: undefined,
@@ -501,11 +505,11 @@ export const Projects: React.FC = () => {
       clear: () => updateFilters({ paymentStatus: undefined, page: 1 })
     });
   }
-  if (projectType !== 'All') {
+  if (customerName) {
     activeChips.push({
-      id: 'projectType',
-      label: `Type: ${projectType}`,
-      clear: () => updateFilters({ projectType: undefined, page: 1 })
+      id: 'customerName',
+      label: `Customer: ${customerName}`,
+      clear: () => updateFilters({ customerName: undefined, page: 1 })
     });
   }
   if (minAmount || maxAmount) {
@@ -963,35 +967,52 @@ export const Projects: React.FC = () => {
               </select>
             </div>
 
-            {/* Project Type */}
+            {/* Customer Name Autocomplete */}
             <div className="space-y-3">
-              <span className="text-xs font-bold text-secondary uppercase tracking-wider block">Project Type</span>
-              <select
-                value={localProjectType}
-                onChange={(e) => setLocalProjectType(e.target.value)}
-                className="h-10 w-full rounded-lg border border-outline-variant bg-surface-container-lowest text-sm font-semibold text-secondary px-3 focus:border-primary focus:ring-1 focus:ring-primary outline-none cursor-pointer"
-              >
-                <option value="All">All Types</option>
-                {projectTypes.map(t => (
-                  <option key={t} value={t}>{t}</option>
+              <span className="text-xs font-bold text-secondary uppercase tracking-wider block">Customer Name</span>
+              <input
+                type="text"
+                list="customer-options"
+                value={localCustomerName}
+                onChange={(e) => setLocalCustomerName(e.target.value)}
+                placeholder="Search/type customer..."
+                className="h-10 w-full rounded-lg border border-outline-variant bg-surface-container-lowest text-sm font-semibold text-secondary px-3 focus:border-primary focus:ring-1 focus:ring-primary outline-none"
+              />
+              <datalist id="customer-options">
+                {customers.map(c => (
+                  <option key={c} value={c} />
                 ))}
-              </select>
+              </datalist>
             </div>
 
-            {/* Project Manager select (if superadmin) */}
+            {/* Project Manager Autocomplete (if superadmin) */}
             {user?.role === 'superadmin' ? (
               <div className="space-y-3">
                 <span className="text-xs font-bold text-secondary uppercase tracking-wider block">Project Manager</span>
-                <select
-                  value={localPrjMgrId}
-                  onChange={(e) => setLocalPrjMgrId(e.target.value)}
-                  className="h-10 w-full rounded-lg border border-outline-variant bg-surface-container-lowest text-sm font-semibold text-secondary px-3 focus:border-primary focus:ring-1 focus:ring-primary outline-none cursor-pointer"
-                >
-                  <option value="All">All Managers</option>
+                <input
+                  type="text"
+                  list="pm-options"
+                  value={localPrjMgrNameInput}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    setLocalPrjMgrNameInput(val);
+                    const matched = projectManagers.find(m => m.prjMgrName.toLowerCase() === val.toLowerCase());
+                    if (matched) {
+                      setLocalPrjMgrId(String(matched.prjMgrId));
+                    } else if (val === '') {
+                      setLocalPrjMgrId('All');
+                    } else {
+                      setLocalPrjMgrId('All');
+                    }
+                  }}
+                  placeholder="Search/type manager..."
+                  className="h-10 w-full rounded-lg border border-outline-variant bg-surface-container-lowest text-sm font-semibold text-secondary px-3 focus:border-primary focus:ring-1 focus:ring-primary outline-none"
+                />
+                <datalist id="pm-options">
                   {projectManagers.map(m => (
-                     <option key={m.prjMgrId} value={m.prjMgrId}>{m.prjMgrName}</option>
+                    <option key={m.prjMgrId} value={m.prjMgrName} />
                   ))}
-                </select>
+                </datalist>
               </div>
             ) : (
               <div className="hidden md:block"></div>

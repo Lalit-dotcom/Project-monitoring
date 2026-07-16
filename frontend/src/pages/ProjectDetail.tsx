@@ -11,7 +11,6 @@ import {
   AlertCircle,
   AlertTriangle,
   CheckCircle2,
-  MoreVertical,
   ShoppingCart,
   Download,
   Loader2,
@@ -130,6 +129,73 @@ export const ProjectDetail: React.FC = () => {
   };
 
   const activeTab = getTabFromParam(searchParams.get('tab'));
+
+  // Filter lists based on global search query from layout context
+  const filteredInvoices = invoices.filter(i => 
+    String(i.invoiceNum || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
+    String(i.vendorName || '').toLowerCase().includes(searchQuery.toLowerCase())
+  );
+
+  const filteredPOs = purchaseOrders.filter(po => 
+    String(po.finalPoNo || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
+    String(po.vendorName || '').toLowerCase().includes(searchQuery.toLowerCase())
+  );
+
+  const filteredTxs = taxInvoices.filter(tx => 
+    String(tx.userBillNo || '').toLowerCase().includes(searchQuery.toLowerCase())
+  );
+
+  const filteredBillDesk = billDesk.filter(b => 
+    String(b.invoiceNo || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
+    String(b.vendorName || '').toLowerCase().includes(searchQuery.toLowerCase())
+  );
+
+  // Reset page to 1 and clear highlight when searchQuery changes
+  const prevSearchQueryRef = useRef(searchQuery);
+  useEffect(() => {
+    if (prevSearchQueryRef.current !== searchQuery) {
+      setCurrentPage(1);
+      if (searchParams.has('highlight')) {
+        const newParams = new URLSearchParams(searchParams);
+        newParams.delete('highlight');
+        setSearchParams(newParams, { replace: true });
+      }
+      prevSearchQueryRef.current = searchQuery;
+    }
+  }, [searchQuery, searchParams, setSearchParams]);
+
+  // Programmatic jump to page and scroll into view for highlighted row
+  const highlight = searchParams.get('highlight');
+  const lastProcessedHighlightRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    if (!highlight || highlight === lastProcessedHighlightRef.current) return;
+
+    let matchedIndex = -1;
+
+    if (activeTab === 'Invoices' && invoices.length > 0) {
+      matchedIndex = filteredInvoices.findIndex(i => String(i.invoiceNum || '') === highlight);
+    } else if (activeTab === 'Purchase Orders' && purchaseOrders.length > 0) {
+      matchedIndex = filteredPOs.findIndex(po => String(po.finalPoNo || '') === highlight);
+    } else if (activeTab === 'Tax Invoices' && taxInvoices.length > 0) {
+      matchedIndex = filteredTxs.findIndex(tx => String(tx.userBillNo || '') === highlight);
+    } else if (activeTab === 'Bill Desk' && billDesk.length > 0) {
+      matchedIndex = filteredBillDesk.findIndex(b => String(b.invoiceNo || '') === highlight);
+    }
+
+    if (matchedIndex !== -1) {
+      lastProcessedHighlightRef.current = highlight;
+      const targetPage = Math.floor(matchedIndex / rowsPerPage) + 1;
+      setCurrentPage(targetPage);
+
+      setTimeout(() => {
+        const element = document.getElementById(`row-highlight-${highlight}`);
+        if (element) {
+          element.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }
+      }, 200);
+    }
+  }, [highlight, activeTab, invoices, purchaseOrders, taxInvoices, billDesk, filteredInvoices, filteredPOs, filteredTxs, filteredBillDesk, rowsPerPage]);
 
   const handleTabChange = (tab: TabName) => {
     const paramVal = tab.toLowerCase().replace(/\s+/g, '-');
@@ -430,73 +496,6 @@ export const ProjectDetail: React.FC = () => {
   };
 
   const derivedActivities = getDerivedActivities();
-
-  // Filter lists based on global search query from layout context
-  const filteredInvoices = invoices.filter(i => 
-    String(i.invoiceNum || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
-    String(i.vendorName || '').toLowerCase().includes(searchQuery.toLowerCase())
-  );
-
-  const filteredPOs = purchaseOrders.filter(po => 
-    String(po.finalPoNo || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
-    String(po.vendorName || '').toLowerCase().includes(searchQuery.toLowerCase())
-  );
-
-  const filteredTxs = taxInvoices.filter(tx => 
-    String(tx.userBillNo || '').toLowerCase().includes(searchQuery.toLowerCase())
-  );
-
-  const filteredBillDesk = billDesk.filter(b => 
-    String(b.invoiceNo || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
-    String(b.vendorName || '').toLowerCase().includes(searchQuery.toLowerCase())
-  );
-
-  // Reset page to 1 and clear highlight when searchQuery changes
-  const prevSearchQueryRef = useRef(searchQuery);
-  useEffect(() => {
-    if (prevSearchQueryRef.current !== searchQuery) {
-      setCurrentPage(1);
-      if (searchParams.has('highlight')) {
-        const newParams = new URLSearchParams(searchParams);
-        newParams.delete('highlight');
-        setSearchParams(newParams, { replace: true });
-      }
-      prevSearchQueryRef.current = searchQuery;
-    }
-  }, [searchQuery, searchParams, setSearchParams]);
-
-  // Programmatic jump to page and scroll into view for highlighted row
-  const highlight = searchParams.get('highlight');
-  const lastProcessedHighlightRef = useRef<string | null>(null);
-
-  useEffect(() => {
-    if (!highlight || highlight === lastProcessedHighlightRef.current) return;
-
-    let matchedIndex = -1;
-
-    if (activeTab === 'Invoices' && invoices.length > 0) {
-      matchedIndex = filteredInvoices.findIndex(i => String(i.invoiceNum || '') === highlight);
-    } else if (activeTab === 'Purchase Orders' && purchaseOrders.length > 0) {
-      matchedIndex = filteredPOs.findIndex(po => String(po.finalPoNo || '') === highlight);
-    } else if (activeTab === 'Tax Invoices' && taxInvoices.length > 0) {
-      matchedIndex = filteredTxs.findIndex(tx => String(tx.userBillNo || '') === highlight);
-    } else if (activeTab === 'Bill Desk' && billDesk.length > 0) {
-      matchedIndex = filteredBillDesk.findIndex(b => String(b.invoiceNo || '') === highlight);
-    }
-
-    if (matchedIndex !== -1) {
-      lastProcessedHighlightRef.current = highlight;
-      const targetPage = Math.floor(matchedIndex / rowsPerPage) + 1;
-      setCurrentPage(targetPage);
-
-      setTimeout(() => {
-        const element = document.getElementById(`row-highlight-${highlight}`);
-        if (element) {
-          element.scrollIntoView({ behavior: 'smooth', block: 'center' });
-        }
-      }, 200);
-    }
-  }, [highlight, activeTab, invoices, purchaseOrders, taxInvoices, billDesk, filteredInvoices, filteredPOs, filteredTxs, filteredBillDesk, rowsPerPage]);
 
   const getBillDeskStatusClasses = (status: string | null | undefined) => {
     if (!status) return 'bg-status-neutral-bg text-status-neutral-text border-status-neutral-border';
@@ -857,13 +856,12 @@ export const ProjectDetail: React.FC = () => {
                         <th className="px-6 py-4 font-headline text-xs font-bold text-secondary uppercase tracking-wider">Tax Inv Amount</th>
                         <th className="px-6 py-4 font-headline text-xs font-bold text-secondary uppercase tracking-wider">Total Amount</th>
                         <th className="px-6 py-4 font-headline text-xs font-bold text-secondary uppercase tracking-wider">Status</th>
-                        <th className="px-6 py-4 font-headline text-xs font-bold text-secondary uppercase tracking-wider text-right w-16">Actions</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-outline-variant">
                       {filteredInvoices.length === 0 ? (
                         <tr>
-                          <td colSpan={6} className="px-6 py-8 text-center text-secondary font-headline">No invoices found for this project.</td>
+                          <td colSpan={5} className="px-6 py-8 text-center text-secondary font-headline">No invoices found for this project.</td>
                         </tr>
                       ) : (
                         paginate(filteredInvoices).map((inv) => {
@@ -897,11 +895,6 @@ export const ProjectDetail: React.FC = () => {
                                   }`} />
                                   {status}
                                 </span>
-                              </td>
-                              <td className="px-6 py-4 text-right" onClick={e => e.stopPropagation()}>
-                                <button className="p-2 text-secondary hover:text-primary rounded-lg transition-colors">
-                                  <MoreVertical className="w-5 h-5" />
-                                </button>
                               </td>
                             </tr>
                           );

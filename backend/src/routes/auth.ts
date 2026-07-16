@@ -1090,21 +1090,33 @@ router.post('/2fa/setup', requireAuth, async (req: AuthenticatedRequest, res: Re
   }
 
   const userId = req.user.userId;
+  const forceRegenerate = req.body?.regenerate === true || req.query?.regenerate === 'true';
 
   try {
-    const secret = generateSecret();
+    // Check if user already has a pending setup secret
+    const existingResult = await pool.query(
+      `SELECT totp_temp_secret FROM users WHERE id = $1`,
+      [userId]
+    );
+
+    let secret = '';
+    if (!forceRegenerate && existingResult.rows.length > 0 && existingResult.rows[0].totp_temp_secret) {
+      secret = existingResult.rows[0].totp_temp_secret;
+    } else {
+      secret = generateSecret();
+      // Save temporarily
+      await pool.query(
+        `UPDATE users SET totp_temp_secret = $1 WHERE id = $2`,
+        [secret, userId]
+      );
+    }
+
     const otpauth = generateURI({
       issuer: 'NICSI NPMS',
       label: req.user.username,
       secret: secret
     });
     const qrCodeDataUrl = await QRCode.toDataURL(otpauth);
-
-    // Save temporarily
-    await pool.query(
-      `UPDATE users SET totp_temp_secret = $1 WHERE id = $2`,
-      [secret, userId]
-    );
 
     res.json({ secret, qrCodeDataUrl });
   } catch (error: any) {

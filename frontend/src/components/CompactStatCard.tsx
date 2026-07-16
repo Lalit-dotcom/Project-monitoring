@@ -8,6 +8,7 @@ interface CompactStatCardProps {
   labelColor: string;
   numColor: string;
   icon?: React.ReactNode;
+  sub?: React.ReactNode;
   loading?: boolean;
   onClick?: (e: React.MouseEvent) => void;
   onMouseEnter?: () => void;
@@ -27,6 +28,7 @@ export const CompactStatCard: React.FC<CompactStatCardProps> = ({
   labelColor,
   numColor,
   icon,
+  sub,
   loading,
   onClick,
   onMouseEnter,
@@ -63,7 +65,7 @@ export const CompactStatCard: React.FC<CompactStatCardProps> = ({
       tabIndex={tabIndex}
       style={{ backgroundColor: bg }}
       className={`rounded-[12px] p-[12px] flex flex-col justify-between relative select-none transition-all focus:outline-none focus:ring-2 focus:ring-primary/40 ${
-        onClick ? 'cursor-pointer' : ''
+        onClick ? 'cursor-pointer hover:shadow-md' : ''
       } ${className || 'h-[88px] min-w-[160px] sm:min-w-[180px] flex-initial'}`}
     >
       <div className="flex justify-between items-start">
@@ -82,6 +84,12 @@ export const CompactStatCard: React.FC<CompactStatCardProps> = ({
       >
         {displayValue}
       </div>
+
+      {sub && (
+        <div style={{ color: labelColor }} className="text-[11px] opacity-75 mt-1 font-sans">
+          {sub}
+        </div>
+      )}
 
       {children}
     </div>

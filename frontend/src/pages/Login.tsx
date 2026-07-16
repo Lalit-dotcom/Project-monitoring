@@ -165,10 +165,6 @@ export const Login: React.FC = () => {
     }
   };
 
-  const handleSSOLogin = () => {
-    toast.info('Single Sign-On (SSO) integration is coming soon.');
-  };
-
   return (
     <main className="min-h-screen w-full flex items-center justify-center p-4 sm:p-6 md:p-8 bg-gradient-to-br from-[#0B1F3F] to-[#1B3E7A] font-sans antialiased overflow-y-auto">
       {/* ─── Main Content Split Card ─── */}
@@ -568,22 +564,6 @@ export const Login: React.FC = () => {
                         </>
                       )}
                     </button>
-
-                    {/* Divider Row */}
-                    <div className="relative flex py-1 items-center select-none">
-                      <div className="flex-grow border-t border-gray-100"></div>
-                      <span className="flex-shrink mx-3 text-[10px] text-gray-400 uppercase tracking-widest font-bold">Or</span>
-                      <div className="flex-grow border-t border-gray-100"></div>
-                    </div>
-
-                    {/* SSO Button */}
-                    <button
-                      type="button"
-                      onClick={handleSSOLogin}
-                      className="w-full h-12 border border-[#1B3E7A] text-[#1B3E7A] hover:bg-[#1B3E7A]/5 font-headline text-xs font-semibold rounded-xl flex items-center justify-center gap-2 transition-all"
-                    >
-                      <span>Sign in with Government SSO</span>
-                    </button>
                   </div>
                 </form>
               </>
@@ -672,20 +652,7 @@ export const Login: React.FC = () => {
             )}
           </div>
 
-          {/* Bottom Lockup */}
-          <div className="text-center text-xs text-gray-400 font-medium pt-6 select-none md:mt-0">
-            <span>Need access? </span>
-            <a 
-              href="#"
-              onClick={(e) => {
-                e.preventDefault();
-                toast.info('Access requests must be approved by the zonal NICSI coordinator.');
-              }}
-              className="text-[#0D9488] hover:underline font-bold"
-            >
-              Contact your administrator
-            </a>
-          </div>
+
 
         </section>
       </div>

@@ -65,7 +65,11 @@ router.get('/', async (req: Request, res: Response): Promise<void> => {
         "SELECT DISTINCT invoice_status FROM bill_desk WHERE invoice_status IS NOT NULL AND invoice_status != '' ORDER BY invoice_status ASC"
       );
       const monthsResult = await pool.query(
-        "SELECT DISTINCT bill_month FROM bill_desk WHERE bill_month IS NOT NULL AND bill_month != '' ORDER BY bill_month ASC"
+        `SELECT bill_month FROM (
+          SELECT DISTINCT bill_month FROM bill_desk 
+          WHERE bill_month IS NOT NULL AND bill_month != ''
+        ) sub 
+        ORDER BY TO_DATE(sub.bill_month, 'FMMonth YYYY') ASC`
       );
       res.json({
         statuses: statusResult.rows.map(row => row.status),

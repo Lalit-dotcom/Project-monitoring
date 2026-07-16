@@ -1,6 +1,9 @@
 import { Router, Response } from 'express';
 import { pool } from '../db.js';
 import { AuthenticatedRequest } from '../middleware/requireAuth.js';
+import fs from 'fs';
+import path from 'path';
+import { fileURLToPath } from 'url';
 import {
   getProjectsVendorOverpaidSql,
   getProjectsBillingAheadSql,
@@ -12,6 +15,26 @@ import {
   getInvoicesDisputedUnpaidSql,
   getTaxInvoicesMissingIrnSql
 } from '../lib/riskFlags.js';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+function getLastImportDate(): string {
+  try {
+    const rawFilePath = path.join(__dirname, '..', '..', 'data', 'raw', 'APPS_XX_NIC_PM_INVOICE_LIST.xlsx');
+    if (fs.existsSync(rawFilePath)) {
+      const stats = fs.statSync(rawFilePath);
+      return stats.mtime.toLocaleDateString('en-IN', {
+        day: '2-digit',
+        month: 'short',
+        year: 'numeric'
+      });
+    }
+  } catch (err) {
+    console.error('Error reading raw file stat:', err);
+  }
+  return '13 Jul 2026';
+}
 
 const router = Router();
 
@@ -63,7 +86,8 @@ router.get('/summary', async (req: AuthenticatedRequest, res: Response): Promise
       riskBreakdown: {
         healthy: Number(healthy),
         atRisk: Number(at_risk)
-      }
+      },
+      lastImportedDate: getLastImportDate()
     });
   } catch (error: any) {
     console.error('Error fetching dashboard summary:', error);
@@ -354,6 +378,179 @@ router.get('/risks/invoices', async (req: AuthenticatedRequest, res: Response): 
   } catch (error: any) {
     console.error('Error fetching invoice risks:', error);
     res.status(500).json({ error: 'Failed to retrieve invoice risks' });
+  }
+});
+
+// GET /api/dashboard/problem-projects
+router.get('/problem-projects', async (req: AuthenticatedRequest, res: Response): Promise<void> => {
+  try {
+    const prjMgrIdVal = req.query.prjMgrId;
+    const pmId = prjMgrIdVal && prjMgrIdVal !== 'All' ? parseInt(String(prjMgrIdVal), 10) : null;
+
+    const vendorOverpaidSql = getProjectsVendorOverpaidSql();
+    const billingAheadSql = getProjectsBillingAheadSql();
+    const stalledSql = getProjectsStalledSql();
+
+    const queryText = `
+      SELECT 
+        projects.project_cd AS "projectCd",
+        projects.prj_nm AS "projectName",
+        COALESCE(projects.amount_received, 0) AS "amountReceived",
+        COALESCE(projects.po_amount, 0) AS "poAmount",
+        COALESCE(projects.no_of_inv_billdesk, 0) AS "noOfInvBilldesk",
+        (SELECT COALESCE(SUM(i.amount_paid), 0) FROM invoices i WHERE i.project_no = projects.project_cd) AS "vendorPaidAmount",
+        (CURRENT_DATE - (SELECT MIN(po.po_date) FROM purchase_orders po WHERE po.project_no = projects.project_cd)) AS "daysSincePo",
+        (${vendorOverpaidSql}) AS "isVendorOverpaid",
+        (${billingAheadSql}) AS "isBillingAhead",
+        (${stalledSql}) AS "isStalled"
+      FROM projects
+      WHERE 
+        ( (${vendorOverpaidSql}) OR (${billingAheadSql}) OR (${stalledSql}) )
+        AND ($1::integer IS NULL OR projects.prj_mgr_id = $1::integer)
+    `;
+
+    const result = await pool.query(queryText, [pmId]);
+
+    const problemProjects = result.rows.map(row => {
+      const problems = [];
+      let maxSeverity = 0;
+
+      if (row.isVendorOverpaid) {
+        const gap = Number(row.vendorPaidAmount) - Number(row.amountReceived);
+        problems.push({
+          type: 'vendorOverpaid',
+          severity: gap
+        });
+        if (gap > maxSeverity) maxSeverity = gap;
+      }
+
+      if (row.isBillingAhead) {
+        const gap = (Number(row.poAmount) * 0.8) - Number(row.amountReceived);
+        problems.push({
+          type: 'billingAhead',
+          severity: gap
+        });
+        if (gap > maxSeverity) maxSeverity = gap;
+      }
+
+      if (row.isStalled) {
+        const days = row.daysSincePo !== null ? Number(row.daysSincePo) : 60;
+        const severity = days * 100000;
+        problems.push({
+          type: 'stalled',
+          severity: severity
+        });
+        if (severity > maxSeverity) maxSeverity = severity;
+      }
+
+      return {
+        projectCd: row.projectCd,
+        projectName: row.projectName,
+        amountReceived: Number(row.amountReceived),
+        poAmount: Number(row.poAmount),
+        vendorPaidAmount: Number(row.vendorPaidAmount),
+        daysSincePo: row.daysSincePo !== null ? Number(row.daysSincePo) : null,
+        problems,
+        maxSeverity
+      };
+    });
+
+    // Sort by maxSeverity descending
+    problemProjects.sort((a, b) => b.maxSeverity - a.maxSeverity);
+
+    // Limit to top 15-20 (we'll slice to 15, which is in the range)
+    res.json(problemProjects.slice(0, 15));
+  } catch (error: any) {
+    console.error('Error fetching dashboard problem projects:', error);
+    res.status(500).json({ error: 'Failed to retrieve problem projects' });
+  }
+});
+
+// GET /api/dashboard/overdue-invoices
+router.get('/overdue-invoices', async (req: AuthenticatedRequest, res: Response): Promise<void> => {
+  try {
+    const prjMgrIdVal = req.query.prjMgrId;
+    const pmId = prjMgrIdVal && prjMgrIdVal !== 'All' ? parseInt(String(prjMgrIdVal), 10) : null;
+
+    const query = `
+      SELECT 
+        inv.invoice_num,
+        inv.project_no,
+        p.prj_nm,
+        inv.vendor_name,
+        inv.invoice_amount,
+        inv.unpaid,
+        (CURRENT_DATE - inv.invoice_date) as days_since_invoice,
+        GREATEST(0, (CURRENT_DATE - inv.invoice_date) - 30) as days_overdue,
+        CASE
+          WHEN (CURRENT_DATE - inv.invoice_date) <= 30 THEN 'Current (<= 30d)'
+          WHEN (CURRENT_DATE - inv.invoice_date) <= 60 THEN '30-60d'
+          WHEN (CURRENT_DATE - inv.invoice_date) <= 90 THEN '60-90d'
+          ELSE '90+d'
+        END as aging_bucket
+      FROM invoices inv
+      JOIN projects p ON inv.project_no = p.project_cd
+      WHERE inv.unpaid > 0
+        AND inv.invoice_date < CURRENT_DATE - INTERVAL '30 days'
+        AND ($1::integer IS NULL OR p.prj_mgr_id = $1::integer)
+      ORDER BY (CURRENT_DATE - inv.invoice_date) DESC
+      LIMIT 5
+    `;
+    const result = await pool.query(query, [pmId]);
+    res.json(result.rows.map(row => ({
+      invoiceNum: row.invoice_num,
+      projectNo: row.project_no,
+      prjNm: row.prj_nm,
+      vendorName: row.vendor_name,
+      invoiceAmount: Number(row.invoice_amount),
+      unpaid: Number(row.unpaid),
+      daysSinceInvoice: Number(row.days_since_invoice),
+      daysOverdue: Number(row.days_overdue),
+      agingBucket: row.aging_bucket
+    })));
+  } catch (error: any) {
+    console.error('Error fetching dashboard overdue invoices:', error);
+    res.status(500).json({ error: 'Failed to retrieve dashboard overdue invoices' });
+  }
+});
+
+// GET /api/dashboard/expired-pos
+router.get('/expired-pos', async (req: AuthenticatedRequest, res: Response): Promise<void> => {
+  try {
+    const prjMgrIdVal = req.query.prjMgrId;
+    const pmId = prjMgrIdVal && prjMgrIdVal !== 'All' ? parseInt(String(prjMgrIdVal), 10) : null;
+
+    const query = `
+      SELECT 
+        purchase_orders.final_po_no,
+        purchase_orders.project_no,
+        p.prj_nm,
+        purchase_orders.vendor_name,
+        purchase_orders.total,
+        p.amount_received,
+        purchase_orders.valid_to,
+        (CURRENT_DATE - purchase_orders.valid_to) as days_expired
+      FROM purchase_orders
+      LEFT JOIN projects p ON p.project_cd = purchase_orders.project_no
+      WHERE ${getPurchaseOrdersExpiredUncollectedSql()}
+        AND ($1::integer IS NULL OR p.prj_mgr_id = $1::integer)
+      ORDER BY (COALESCE(purchase_orders.total, 0) - COALESCE(p.amount_received, 0)) DESC
+      LIMIT 10
+    `;
+    const result = await pool.query(query, [pmId]);
+    res.json(result.rows.map(row => ({
+      finalPoNo: row.final_po_no,
+      projectNo: row.project_no,
+      prjNm: row.prj_nm,
+      vendorName: row.vendor_name,
+      total: Number(row.total),
+      amountReceived: Number(row.amount_received),
+      validTo: row.valid_to,
+      daysExpired: Number(row.days_expired)
+    })));
+  } catch (error: any) {
+    console.error('Error fetching dashboard expired POs:', error);
+    res.status(500).json({ error: 'Failed to retrieve dashboard expired POs' });
   }
 });
 

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { useOutletContext } from 'react-router-dom';
+import { useSearchParams, Link } from 'react-router-dom';
 import {
   BarChart,
   Bar,
@@ -13,77 +13,47 @@ import {
   Wallet,
   FileText,
   CheckCircle,
-  Briefcase
+  Briefcase,
+  AlertTriangle,
+  ArrowRight,
+  Inbox,
+  SearchX
 } from 'lucide-react';
 import { api } from '../lib/api';
 import { useTheme } from '../context/ThemeContext';
-import { useCountUp } from '../hooks/useCountUp';
+import { CompactStatCard } from '../components/CompactStatCard';
 import { toast } from '../lib/toast';
 
-/* ─── Animated Metric Card ─── */
-interface MetricCardProps {
-  label: string;
-  value: number;
-  icon: React.ReactNode;
-  sub?: React.ReactNode;
-  accent?: 'primary' | 'accent' | 'warning' | 'success' | 'error';
-  format: (v: number) => string;
+/* ─── Chart Empty State ─── */
+interface ChartEmptyStateProps {
+  title: string;
+  description: string;
+  isFiltered?: boolean;
 }
 
-const accentMap = {
-  primary: {
-    border: 'border-t-primary',
-    iconBg: 'bg-primary/10',
-    iconText: 'text-primary',
-  },
-  accent: {
-    border: 'border-t-accent',
-    iconBg: 'bg-accent/10',
-    iconText: 'text-accent',
-  },
-  warning: {
-    border: 'border-t-status-warning-text',
-    iconBg: 'bg-status-warning-bg',
-    iconText: 'text-status-warning-text',
-  },
-  success: {
-    border: 'border-t-status-success-text',
-    iconBg: 'bg-status-success-bg',
-    iconText: 'text-status-success-text',
-  },
-  error: {
-    border: 'border-t-error',
-    iconBg: 'bg-error/10',
-    iconText: 'text-error',
-  },
-};
-
-const MetricCard: React.FC<MetricCardProps> = ({ label, value, icon, sub, accent = 'primary', format }) => {
-  const animated = useCountUp(value);
-  const styles = accentMap[accent];
+const ChartEmptyState: React.FC<ChartEmptyStateProps> = ({ title, description, isFiltered = false }) => {
+  const Icon = isFiltered ? SearchX : Inbox;
   return (
-    <div
-      className={`bg-surface-container-lowest border border-outline-variant border-t-4 ${styles.border} p-5 rounded-lg shadow-sm flex flex-col gap-2`}
-    >
-      <div className="flex justify-between items-start">
-        <span className="font-headline text-xs font-semibold text-secondary uppercase tracking-wider">
-          {label}
-        </span>
-        <div className={`p-1 ${styles.iconBg} rounded-md ${styles.iconText}`}>
-          {icon}
-        </div>
+    <div className="h-full flex flex-col items-center justify-center text-center p-8 bg-surface-container-low/20 rounded-md border border-dashed border-outline-variant/50">
+      <div className="w-12 h-12 rounded-full bg-surface-container flex items-center justify-center mb-3">
+        <Icon className="w-6 h-6 text-outline" aria-hidden="true" />
       </div>
-      <div className="font-headline text-3xl font-bold text-on-surface dont-translate bhashini-skip-translation">
-        {format(animated)}
-      </div>
-      {sub && <div className="flex items-center gap-1 text-[11px]">{sub}</div>}
+      <span className="text-on-surface font-headline text-sm font-bold mb-1">
+        {title}
+      </span>
+      <span className="text-secondary text-xs">
+        {description}
+      </span>
     </div>
   );
 };
 
 export const Dashboard: React.FC = () => {
   const { theme } = useTheme();
-  const { searchQuery: _searchQuery } = useOutletContext<{ searchQuery: string }>();
+  const [searchParams] = useSearchParams();
+  const prjMgrIdParam = searchParams.get('prjMgrId');
+  const prjMgrId = prjMgrIdParam && prjMgrIdParam !== 'All' ? parseInt(prjMgrIdParam, 10) : null;
+
   const [metrics, setMetrics] = useState({
     totalReceived: 0,
     totalPO: 0,
@@ -95,8 +65,15 @@ export const Dashboard: React.FC = () => {
     riskBreakdown: {
       healthy: 0,
       atRisk: 0
-    }
+    },
+    lastImportedDate: ''
   });
+
+  const [overdueInvoices, setOverdueInvoices] = useState<any[]>([]);
+  const [overdueInvoicesLoading, setOverdueInvoicesLoading] = useState(false);
+
+  const [expiredPos, setExpiredPos] = useState<any[]>([]);
+  const [expiredPosLoading, setExpiredPosLoading] = useState(false);
 
   const [comparisonMetric, setComparisonMetric] = useState<'budgetVsReceived' | 'poVsBillPaid' | 'poVsTaxInvoice'>('budgetVsReceived');
   const [comparisonData, setComparisonData] = useState<any[]>([]);
@@ -114,87 +91,132 @@ export const Dashboard: React.FC = () => {
   const [invoiceRiskData, setInvoiceRiskData] = useState<{ chartType: 'comparison' | 'single'; series: any[] }>({ chartType: 'comparison', series: [] });
   const [invoiceRiskLoading, setInvoiceRiskLoading] = useState(false);
 
+  const [activeGraph, setActiveGraph] = useState<'comparison' | 'projectRisks' | 'poRisks' | 'invoiceRisks'>('comparison');
+  const [problemProjects, setProblemProjects] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const fetchData = async () => {
+    const fetchGeneralData = async () => {
+      setLoading(true);
       try {
-        const [mets, comparisonRes, projRisks, poRisks, invRisks] = await Promise.all([
-          api.getDashboardMetrics(),
-          api.getDashboardProjectComparison(comparisonMetric),
-          api.getDashboardProjectRisks(projectRiskType),
-          api.getDashboardPoRisks(poRiskType),
-          api.getDashboardInvoiceRisks(invoiceRiskType)
-        ]);
+        const mets = await api.getDashboardMetrics(prjMgrId);
         setMetrics(mets);
-        setComparisonData(comparisonRes.projectComparison ?? []);
-        setProjectRiskData(projRisks);
-        setPoRiskData(poRisks);
-        setInvoiceRiskData(invRisks);
       } catch (err) {
-        console.error(err);
-        toast.error("Couldn't load Dashboard risks data — check your connection");
+        console.error("Failed to load metrics:", err);
+        toast.error("Couldn't load core project metrics");
       } finally {
         setLoading(false);
       }
     };
-    fetchData();
-  }, []);
 
-  const handleComparisonMetricChange = async (newMetric: 'budgetVsReceived' | 'poVsBillPaid' | 'poVsTaxInvoice') => {
+    const fetchProblems = async () => {
+      try {
+        const problemProjRes = await api.getDashboardProblemProjects(prjMgrId);
+        setProblemProjects(problemProjRes ?? []);
+      } catch (err) {
+        console.error("Failed to load problem projects:", err);
+        setProblemProjects([]);
+      }
+    };
+
+    const fetchOverdueInvoices = async () => {
+      setOverdueInvoicesLoading(true);
+      try {
+        const overdueRes = await api.getDashboardOverdueInvoices(prjMgrId);
+        setOverdueInvoices(overdueRes ?? []);
+      } catch (err) {
+        console.error("Failed to load overdue invoices:", err);
+        setOverdueInvoices([]);
+      } finally {
+        setOverdueInvoicesLoading(false);
+      }
+    };
+
+    const fetchExpiredPos = async () => {
+      setExpiredPosLoading(true);
+      try {
+        const expiredRes = await api.getDashboardExpiredPos(prjMgrId);
+        setExpiredPos(expiredRes ?? []);
+      } catch (err) {
+        console.error("Failed to load expired POs:", err);
+        setExpiredPos([]);
+      } finally {
+        setExpiredPosLoading(false);
+      }
+    };
+
+    fetchGeneralData();
+    fetchProblems();
+    fetchOverdueInvoices();
+    fetchExpiredPos();
+  }, [prjMgrId]);
+
+  useEffect(() => {
+    const fetchActiveGraphData = async () => {
+      if (activeGraph === 'comparison') {
+        setComparisonLoading(true);
+        try {
+          const res = await api.getDashboardProjectComparison(comparisonMetric, prjMgrId);
+          setComparisonData(res.projectComparison ?? []);
+        } catch (err) {
+          console.error(err);
+          toast.error("Failed to load comparison data");
+        } finally {
+          setComparisonLoading(false);
+        }
+      } else if (activeGraph === 'projectRisks') {
+        setProjectRiskLoading(true);
+        try {
+          const res = await api.getDashboardProjectRisks(projectRiskType, prjMgrId);
+          setProjectRiskData(res);
+        } catch (err) {
+          console.error(err);
+          toast.error("Failed to load project risk data");
+        } finally {
+          setProjectRiskLoading(false);
+        }
+      } else if (activeGraph === 'poRisks') {
+        setPoRiskLoading(true);
+        try {
+          const res = await api.getDashboardPoRisks(poRiskType, prjMgrId);
+          setPoRiskData(res);
+        } catch (err) {
+          console.error(err);
+          toast.error("Failed to load PO risk data");
+        } finally {
+          setPoRiskLoading(false);
+        }
+      } else if (activeGraph === 'invoiceRisks') {
+        setInvoiceRiskLoading(true);
+        try {
+          const res = await api.getDashboardInvoiceRisks(invoiceRiskType, prjMgrId);
+          setInvoiceRiskData(res);
+        } catch (err) {
+          console.error(err);
+          toast.error("Failed to load invoice risk data");
+        } finally {
+          setInvoiceRiskLoading(false);
+        }
+      }
+    };
+
+    fetchActiveGraphData();
+  }, [activeGraph, prjMgrId, comparisonMetric, projectRiskType, poRiskType, invoiceRiskType]);
+
+  const handleComparisonMetricChange = (newMetric: 'budgetVsReceived' | 'poVsBillPaid' | 'poVsTaxInvoice') => {
     setComparisonMetric(newMetric);
-    setComparisonLoading(true);
-    try {
-      const data = await api.getDashboardProjectComparison(newMetric);
-      setComparisonData(data.projectComparison ?? []);
-    } catch (err) {
-      console.error(err);
-      toast.error("Failed to load project comparison data");
-    } finally {
-      setComparisonLoading(false);
-    }
   };
 
-  const handleProjectTypeChange = async (newType: 'vendorOverpaid' | 'billingAhead' | 'stalled') => {
+  const handleProjectTypeChange = (newType: 'vendorOverpaid' | 'billingAhead' | 'stalled') => {
     setProjectRiskType(newType);
-    setProjectRiskLoading(true);
-    try {
-      const data = await api.getDashboardProjectRisks(newType);
-      setProjectRiskData(data);
-    } catch (err) {
-      console.error(err);
-      toast.error("Failed to load project risk data");
-    } finally {
-      setProjectRiskLoading(false);
-    }
   };
 
-  const handlePoTypeChange = async (newType: 'expiringSoon' | 'expiredUncollected' | 'stalled') => {
+  const handlePoTypeChange = (newType: 'expiringSoon' | 'expiredUncollected' | 'stalled') => {
     setPoRiskType(newType);
-    setPoRiskLoading(true);
-    try {
-      const data = await api.getDashboardPoRisks(newType);
-      setPoRiskData(data);
-    } catch (err) {
-      console.error(err);
-      toast.error("Failed to load PO risk data");
-    } finally {
-      setPoRiskLoading(false);
-    }
   };
 
-  const handleInvoiceTypeChange = async (newType: 'overdueUnpaid' | 'disputedUnpaid') => {
+  const handleInvoiceTypeChange = (newType: 'overdueUnpaid' | 'disputedUnpaid') => {
     setInvoiceRiskType(newType);
-    setInvoiceRiskLoading(true);
-    try {
-      const data = await api.getDashboardInvoiceRisks(newType);
-      setInvoiceRiskData(data);
-    } catch (err) {
-      console.error(err);
-      toast.error("Failed to load invoice risk data");
-    } finally {
-      setInvoiceRiskLoading(false);
-    }
   };
 
   const formatINR = (val: number, abbreviate = true) => {
@@ -217,83 +239,106 @@ export const Dashboard: React.FC = () => {
   // Curated theme-aware colors for each Project Comparison Metric
   const comparisonColors = theme === 'dark'
     ? {
-        budgetVsReceived: { val1: '#6bd8cb', val2: '#c0c6db' }, // Teal & Grey-Blue
+        budgetVsReceived: { val1: '#6bd8cb', val2: '#b2ebe3' }, // Teal & Lighter Mint-Teal
         poVsBillPaid: { val1: '#ffb300', val2: '#90caf9' },     // Amber & Blue
-        poVsTaxInvoice: { val1: '#ec407a', val2: '#ce93d8' },    // Pink & Purple
+        poVsTaxInvoice: { val1: '#b39ddb', val2: '#d1c4e9' },    // Violet & Lavender
         grid: 'rgba(188,201,198,0.08)',
         axis: '#bcc9c6',
         tooltipBg: '#272b2a',
         tooltipText: '#e1e3e2'
       }
     : {
-        budgetVsReceived: { val1: '#00685f', val2: '#575e70' }, // Dark Teal & Slate
+        budgetVsReceived: { val1: '#0E6B63', val2: '#6FC2B6' }, // Dark Teal & Light Mint-Teal
         poVsBillPaid: { val1: '#b8860b', val2: '#1976d2' },     // Gold & Blue
-        poVsTaxInvoice: { val1: '#c2185b', val2: '#7b1fa2' },    // Pink & Purple
+        poVsTaxInvoice: { val1: '#673ab7', val2: '#9575cd' },    // Purple & Violet
         grid: 'rgba(0,0,0,0.04)',
         axis: '#6d7a77',
         tooltipBg: '#191c1d',
         tooltipText: '#f0f1f2'
       };
 
-  // Distinct hue-based theme-aware colors for each of the 3 Risk Cards
-  const riskCardColors = theme === 'dark'
+  // Consistent theme-aware colors for all Risk/Compliance charts
+  const riskColors = theme === 'dark'
     ? {
-        project: {
-          atRisk: '#ffab91',  // soft orange-red
-          neutral: '#ffe082', // soft amber
-          axis: '#bcc9c6',
-          grid: 'rgba(188,201,198,0.08)',
-          tooltipBg: '#272b2a',
-          tooltipText: '#e1e3e2'
-        },
-        po: {
-          atRisk: '#ff80ab',  // soft pink-red
-          neutral: '#b39ddb', // soft purple
-          axis: '#bcc9c6',
-          grid: 'rgba(188,201,198,0.08)',
-          tooltipBg: '#272b2a',
-          tooltipText: '#e1e3e2'
-        },
-        invoice: {
-          atRisk: '#ffb4ab',  // soft crimson
-          neutral: '#b0bec5', // soft slate
-          axis: '#bcc9c6',
-          grid: 'rgba(188,201,198,0.08)',
-          tooltipBg: '#272b2a',
-          tooltipText: '#e1e3e2'
-        }
+        atRisk: '#ff8f9c',  // soft crimson/coral-red
+        neutral: '#dbe1bc', // soft pale sage-green
+        axis: '#bcc9c6',
+        grid: 'rgba(188,201,198,0.08)',
+        tooltipBg: '#272b2a',
+        tooltipText: '#e1e3e2'
       }
     : {
-        project: {
-          atRisk: '#d84315',  // dark orange-red
-          neutral: '#ffb300', // amber
-          axis: '#6d7a77',
-          grid: 'rgba(0,0,0,0.04)',
-          tooltipBg: '#191c1d',
-          tooltipText: '#f0f1f2'
-        },
-        po: {
-          atRisk: '#c2185b',  // deep pink
-          neutral: '#673ab7', // deep purple
-          axis: '#6d7a77',
-          grid: 'rgba(0,0,0,0.04)',
-          tooltipBg: '#191c1d',
-          tooltipText: '#f0f1f2'
-        },
-        invoice: {
-          atRisk: '#ba1a1a',  // deep red
-          neutral: '#607d8b', // slate grey
-          axis: '#6d7a77',
-          grid: 'rgba(0,0,0,0.04)',
-          tooltipBg: '#191c1d',
-          tooltipText: '#f0f1f2'
-        }
+        atRisk: '#E0142E',  // strong red
+        neutral: '#E4EAC5', // pale sage-green
+        axis: '#6d7a77',
+        grid: 'rgba(0,0,0,0.04)',
+        tooltipBg: '#191c1d',
+        tooltipText: '#f0f1f2'
       };
 
   const formatCr = (val: number) => {
     if (val >= 10000000) return `₹${(val / 10000000).toFixed(1)}Cr`;
     if (val >= 100000) return `₹${(val / 100000).toFixed(1)}L`;
     return `₹${val.toLocaleString('en-IN')}`;
+  };
+
+  const computeChartWidth = (dataLength: number) => {
+    const FIXED_SLOT_WIDTH = 110;
+    const Y_AXIS_PADDING = 80;
+    return dataLength * FIXED_SLOT_WIDTH + Y_AXIS_PADDING;
+  };
+
+  const getLegendItems = () => {
+    if (activeGraph === 'comparison') {
+      const colors = comparisonColors[comparisonMetric];
+      if (comparisonMetric === 'budgetVsReceived') {
+        return [
+          { name: 'Budget', color: colors.val1 },
+          { name: 'Received', color: colors.val2 }
+        ];
+      } else if (comparisonMetric === 'poVsBillPaid') {
+        return [
+          { name: 'PO Amount', color: colors.val1 },
+          { name: 'Bill Paid', color: colors.val2 }
+        ];
+      } else {
+        return [
+          { name: 'PO Amount', color: colors.val1 },
+          { name: 'Tax Invoice', color: colors.val2 }
+        ];
+      }
+    }
+
+    if (activeGraph === 'projectRisks') {
+      if (projectRiskData.chartType === 'single') {
+        return [{ name: 'Days Stalled', color: riskColors.atRisk }];
+      } else {
+        return [
+          { name: projectRiskType === 'vendorOverpaid' ? 'Vendor Paid' : 'PO Amount', color: riskColors.atRisk },
+          { name: 'Client Received', color: riskColors.neutral }
+        ];
+      }
+    }
+
+    if (activeGraph === 'poRisks') {
+      if (poRiskData.chartType === 'single') {
+        return [{ name: 'Days Stalled', color: riskColors.atRisk }];
+      } else {
+        return [
+          { name: 'PO Total', color: riskColors.atRisk },
+          { name: 'Client Received', color: riskColors.neutral }
+        ];
+      }
+    }
+
+    if (activeGraph === 'invoiceRisks') {
+      return [
+        { name: 'Invoice Amount', color: riskColors.neutral },
+        { name: 'Unpaid Amount', color: riskColors.atRisk }
+      ];
+    }
+
+    return [];
   };
 
   // Custom tooltip for risk charts
@@ -326,432 +371,777 @@ export const Dashboard: React.FC = () => {
   return (
     <div className="space-y-stack-lg">
       {/* Page Header */}
-      <div className="flex flex-col md:flex-row md:items-end justify-between gap-4">
+      <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4">
         <div>
           <h2 className="font-headline text-2xl font-bold text-on-surface mb-1">Dashboard</h2>
           <p className="font-sans text-sm text-secondary">Real-time tracking of project liquidity and settlements.</p>
         </div>
+        {metrics.lastImportedDate && (
+          <div className="text-secondary font-sans text-xs bg-surface-container-low border border-outline-variant px-3 py-1.5 rounded-md shadow-sm self-start sm:self-end">
+            Data last updated: <span className="font-semibold text-on-surface">{metrics.lastImportedDate}</span>
+          </div>
+        )}
       </div>
 
       {/* Metric Cards Row — responsive grid */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-stack-md">
-        <MetricCard
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-stack-md">
+        <CompactStatCard
           label="Total Projects"
           value={metrics.totalProjects}
+          bg="#B5D4F4"
+          labelColor="#0C447C"
+          numColor="#042C53"
           icon={<Briefcase className="w-4 h-4" />}
           format={v => String(v)}
-          accent="primary"
-          sub={<span className="text-secondary opacity-60">Active in portfolio</span>}
+          sub="Active in portfolio"
+          className="p-5 border border-outline-variant/20 shadow-sm rounded-md h-auto font-sans"
         />
-        <MetricCard
+        <CompactStatCard
           label="Budget"
           value={metrics.totalBudget}
+          bg="#E0D4FC"
+          labelColor="#4F3B90"
+          numColor="#322468"
           icon={<FileText className="w-4 h-4" />}
           format={v => formatINR(v)}
-          accent="accent"
-          sub={<span className="text-secondary opacity-60">Across {metrics.totalProjects} projects</span>}
+          sub={`Across ${metrics.totalProjects} projects`}
+          className="p-5 border border-outline-variant/20 shadow-sm rounded-md h-auto font-sans"
         />
-        <MetricCard
+        <CompactStatCard
           label="Received"
           value={metrics.totalReceived}
+          bg="#9FE1CB"
+          labelColor="#1F5E49"
+          numColor="#133F31"
           icon={<Wallet className="w-4 h-4" />}
           format={v => formatINR(v)}
-          accent="warning"
-          sub={<span className="text-secondary opacity-60">Across {metrics.totalProjects} projects</span>}
+          sub={`Across ${metrics.totalProjects} projects`}
+          className="p-5 border border-outline-variant/20 shadow-sm rounded-md h-auto font-sans"
         />
-        <MetricCard
+        <CompactStatCard
           label="Paid"
           value={metrics.totalPaid}
+          bg="#C5EDC6"
+          labelColor="#245C26"
+          numColor="#173D19"
           icon={<CheckCircle className="w-4 h-4" />}
           format={v => formatINR(v)}
-          accent="success"
-          sub={<span className="text-secondary opacity-60">Across {metrics.totalProjects} projects</span>}
+          sub={`Across ${metrics.totalProjects} projects`}
+          className="p-5 border border-outline-variant/20 shadow-sm rounded-md h-auto font-sans"
+        />
+        <CompactStatCard
+          label="At-Risk Projects"
+          value={metrics.riskBreakdown.atRisk}
+          bg="#F09595"
+          labelColor="#791F1F"
+          numColor="#501313"
+          icon={<AlertTriangle className="w-4 h-4" />}
+          format={v => String(v)}
+          sub="Flagged by risk rules"
+          className="p-5 border border-outline-variant/20 shadow-sm rounded-md h-auto font-sans"
+          onClick={() => {
+            const el = document.getElementById('problems-block');
+            if (el) {
+              el.scrollIntoView({ behavior: 'smooth' });
+            }
+          }}
         />
       </div>
 
-      {/* Cards Grid Section */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-stack-lg">
-        {/* Card 1: Project Comparison */}
-        <div className="bg-surface-container-lowest border border-outline-variant p-6 rounded-lg shadow-sm flex flex-col min-h-[460px]">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-4">
-            <div>
-              <h3 className="font-headline text-lg font-bold text-on-surface">Project Comparison</h3>
-              <p className="font-sans text-xs text-secondary mt-0.5">
-                {comparisonMetric === 'budgetVsReceived'
+      {/* Consolidated Chart Card */}
+      <div className="bg-surface-container-lowest border border-outline-variant p-6 rounded-lg shadow-sm flex flex-col min-h-[480px]">
+        {/* Header section with selectors */}
+        <div className="flex flex-col md:flex-row md:items-start justify-between gap-4 mb-6 pb-4 border-b border-outline-variant">
+          <div className="flex-1">
+            <h3 className="font-headline text-lg font-bold text-on-surface">
+              {activeGraph === 'comparison' && 'Project Comparison'}
+              {activeGraph === 'projectRisks' && 'Project Risks'}
+              {activeGraph === 'poRisks' && 'Purchase Order Risks'}
+              {activeGraph === 'invoiceRisks' && 'Invoice Risks'}
+            </h3>
+            <p className="font-sans text-xs text-secondary mt-0.5">
+              {activeGraph === 'comparison' && (
+                comparisonMetric === 'budgetVsReceived'
                   ? 'Budget amount vs. amount received from client — top 5 projects ranked by budget'
                   : comparisonMetric === 'poVsBillPaid'
                   ? 'Purchase Order amount vs. total amount paid to vendors — top 5 projects ranked by PO value'
-                  : 'Purchase Order amount vs. total tax invoice amount — top 5 projects ranked by PO value'}
-              </p>
-            </div>
-            <div className="self-start sm:self-center">
-              <select
-                value={comparisonMetric}
-                onChange={(e) => handleComparisonMetricChange(e.target.value as any)}
-                className="bg-surface border border-outline-variant text-on-surface font-sans text-xs rounded px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-primary shadow-sm cursor-pointer"
-              >
-                <option value="budgetVsReceived">Budget vs Received</option>
-                <option value="poVsBillPaid">PO vs Bill Paid</option>
-                <option value="poVsTaxInvoice">PO vs Tax Invoice</option>
-              </select>
-            </div>
-          </div>
-
-          {comparisonLoading ? (
-            <div className="flex-1 flex flex-col items-center justify-center p-8 space-y-4">
-              <div className="w-8 h-8 border-3 border-primary border-t-transparent rounded-full animate-spin" aria-hidden="true" />
-              <p className="text-secondary font-sans text-xs">Loading comparison...</p>
-            </div>
-          ) : comparisonData.length === 0 ? (
-            <div className="flex-1 flex flex-col items-center justify-center text-center p-8 bg-surface-container-low/20 rounded-md border border-dashed border-outline-variant/50">
-              <span className="text-secondary font-headline text-sm font-semibold mb-1">
-                No comparison data available
-              </span>
-            </div>
-          ) : (
-            <div className="flex-1 h-[320px] w-full dont-translate bhashini-skip-translation">
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={comparisonData} margin={{ top: 10, right: 10, left: -20, bottom: 20 }}>
-                  <CartesianGrid vertical={false} stroke={comparisonColors.grid} />
-                  <XAxis
-                    dataKey="projectCode"
-                    stroke={comparisonColors.axis}
-                    fontSize={10}
-                    fontFamily="Geist"
-                    tickLine={false}
-                    interval={0}
-                    angle={-25}
-                    textAnchor="end"
-                    height={50}
-                  />
-                  <YAxis
-                    stroke={comparisonColors.axis}
-                    fontSize={10}
-                    fontFamily="Geist"
-                    tickLine={false}
-                    tickFormatter={formatCr}
-                    width={70}
-                  />
-                  <Tooltip
-                    content={<CustomRiskTooltip unitType="money" />}
-                    cursor={{ fill: 'rgba(0,0,0,0.02)' }}
-                  />
-                  <Bar
-                    dataKey="value1"
-                    name={
-                      comparisonMetric === 'budgetVsReceived'
-                        ? 'Budget'
-                        : 'PO Amount'
-                    }
-                    fill={comparisonColors[comparisonMetric].val1}
-                    radius={[3, 3, 0, 0]}
-                  />
-                  <Bar
-                    dataKey="value2"
-                    name={
-                      comparisonMetric === 'budgetVsReceived'
-                        ? 'Received'
-                        : comparisonMetric === 'poVsBillPaid'
-                        ? 'Bill Paid'
-                        : 'Tax Invoice'
-                    }
-                    fill={comparisonColors[comparisonMetric].val2}
-                    radius={[3, 3, 0, 0]}
-                  />
-                </BarChart>
-              </ResponsiveContainer>
-            </div>
-          )}
-        </div>
-
-        {/* Card 2: Project Risks */}
-        <div className="bg-surface-container-lowest border border-outline-variant p-6 rounded-lg shadow-sm flex flex-col min-h-[460px]">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-4">
-            <div>
-              <h3 className="font-headline text-lg font-bold text-on-surface">Project Risks</h3>
-              <p className="font-sans text-xs text-secondary mt-0.5">
-                {projectRiskType === 'vendorOverpaid'
+                  : 'Purchase Order amount vs. total tax invoice amount — top 5 projects ranked by PO value'
+              )}
+              {activeGraph === 'projectRisks' && (
+                projectRiskType === 'vendorOverpaid'
                   ? 'Amount paid to vendor vs. amount received from client — vendor paid more than collected'
                   : projectRiskType === 'billingAhead'
                   ? 'PO amount vs. amount received from client — billing/PO value is ahead of collection progress'
-                  : 'Days since oldest PO was issued for projects with zero billing desk invoices (older than 60 days)'}
-              </p>
-            </div>
-            <div className="flex flex-wrap gap-1.5 self-start sm:self-center">
-              {(['vendorOverpaid', 'billingAhead', 'stalled'] as const).map((t) => (
-                <button
-                  key={t}
-                  onClick={() => handleProjectTypeChange(t)}
-                  className={`px-3 py-1.5 rounded-full font-headline text-xs font-semibold transition-all ${
-                    projectRiskType === t
-                      ? 'bg-primary text-on-primary shadow-sm'
-                      : 'bg-surface-container-low/60 text-secondary hover:bg-surface-container-high'
-                  }`}
-                >
-                  {t === 'vendorOverpaid' ? 'Vendor Overpaid' : t === 'billingAhead' ? 'Billing Ahead' : 'Stalled'}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {projectRiskLoading ? (
-            <div className="flex-1 flex flex-col items-center justify-center p-8 space-y-4">
-              <div className="w-8 h-8 border-3 border-primary border-t-transparent rounded-full animate-spin" aria-hidden="true" />
-              <p className="text-secondary font-sans text-xs">Loading project risks...</p>
-            </div>
-          ) : projectRiskData.series.length === 0 ? (
-            <div className="flex-1 flex flex-col items-center justify-center text-center p-8 bg-surface-container-low/20 rounded-md border border-dashed border-outline-variant/50">
-              <span className="text-secondary font-headline text-sm font-semibold mb-1">
-                No projects currently at risk
-              </span>
-              <span className="text-secondary opacity-60 text-xs">
-                All active projects are healthy for this risk category.
-              </span>
-            </div>
-          ) : (
-            <div className="flex-1 h-[320px] w-full dont-translate bhashini-skip-translation">
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={projectRiskData.series} margin={{ top: 10, right: 10, left: -20, bottom: 20 }}>
-                  <CartesianGrid vertical={false} stroke={riskCardColors.project.grid} />
-                  <XAxis
-                    dataKey="label"
-                    stroke={riskCardColors.project.axis}
-                    fontSize={10}
-                    fontFamily="Geist"
-                    tickLine={false}
-                    interval={0}
-                    angle={-25}
-                    textAnchor="end"
-                    height={50}
-                  />
-                  <YAxis
-                    stroke={riskCardColors.project.axis}
-                    fontSize={10}
-                    fontFamily="Geist"
-                    tickLine={false}
-                    tickFormatter={projectRiskData.chartType === 'single' ? undefined : formatCr}
-                    width={70}
-                  />
-                  <Tooltip
-                    content={<CustomRiskTooltip unitType={projectRiskData.chartType === 'single' ? 'days' : 'money'} />}
-                    cursor={{ fill: 'rgba(0,0,0,0.02)' }}
-                  />
-                  {projectRiskData.chartType === 'single' ? (
-                    <Bar
-                      dataKey="value1"
-                      name="Days Stalled"
-                      fill={riskCardColors.project.atRisk}
-                      radius={[3, 3, 0, 0]}
-                    />
-                  ) : (
-                    <>
-                      <Bar
-                        dataKey="value1"
-                        name={projectRiskType === 'vendorOverpaid' ? 'Vendor Paid' : 'PO Amount'}
-                        fill={riskCardColors.project.atRisk}
-                        radius={[3, 3, 0, 0]}
-                      />
-                      <Bar
-                        dataKey="value2"
-                        name="Client Received"
-                        fill={riskCardColors.project.neutral}
-                        radius={[3, 3, 0, 0]}
-                      />
-                    </>
-                  )}
-                </BarChart>
-              </ResponsiveContainer>
-            </div>
-          )}
-        </div>
-
-        {/* Card 3: Purchase Order Risks */}
-        <div className="bg-surface-container-lowest border border-outline-variant p-6 rounded-lg shadow-sm flex flex-col min-h-[460px]">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-4">
-            <div>
-              <h3 className="font-headline text-lg font-bold text-on-surface">Purchase Order Risks</h3>
-              <p className="font-sans text-xs text-secondary mt-0.5">
-                {poRiskType === 'expiringSoon'
+                  : 'Days since oldest PO was issued for projects with zero billing desk invoices (older than 60 days)'
+              )}
+              {activeGraph === 'poRisks' && (
+                poRiskType === 'expiringSoon'
                   ? 'PO total vs. amount received — PO is expiring within 1 month with collection below 80%'
                   : poRiskType === 'expiredUncollected'
                   ? 'PO total vs. amount received — PO has expired but amount collected is less than the PO total'
-                  : 'Days since PO date for purchase orders with zero billing desk invoices (older than 60 days)'}
-              </p>
-            </div>
-            <div className="flex flex-wrap gap-1.5 self-start sm:self-center">
-              {(['expiringSoon', 'expiredUncollected', 'stalled'] as const).map((t) => (
-                <button
-                  key={t}
-                  onClick={() => handlePoTypeChange(t)}
-                  className={`px-3 py-1.5 rounded-full font-headline text-xs font-semibold transition-all ${
-                    poRiskType === t
-                      ? 'bg-primary text-on-primary shadow-sm'
-                      : 'bg-surface-container-low/60 text-secondary hover:bg-surface-container-high'
-                  }`}
+                  : 'Days since PO date for purchase orders with zero billing desk invoices (older than 60 days)'
+              )}
+              {activeGraph === 'invoiceRisks' && (
+                invoiceRiskType === 'overdueUnpaid'
+                  ? 'Invoice amount vs. unpaid amount — invoices that remain unpaid 30 days after the invoice date'
+                  : 'Invoice amount vs. unpaid amount — invoices with active client dispute/objection remarks and unpaid balance'
+              )}
+            </p>
+          </div>
+          
+          {/* Controls */}
+          <div className="flex flex-col md:flex-row items-start md:items-center gap-4 shrink-0 md:ml-auto">
+            <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4">
+              <div className="flex items-center gap-2">
+                <span className="font-sans text-xs font-bold text-secondary">Select Graph:</span>
+                <select
+                  value={activeGraph}
+                  onChange={(e) => setActiveGraph(e.target.value as any)}
+                  className="bg-surface border border-outline-variant text-on-surface font-sans text-xs rounded px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-primary shadow-sm cursor-pointer font-bold"
                 >
-                  {t === 'expiringSoon' ? 'Expiring Soon' : t === 'expiredUncollected' ? 'Expired & Uncollected' : 'Stalled'}
-                </button>
+                  <option value="comparison">Project Comparison</option>
+                  <option value="projectRisks">Project Risks</option>
+                  <option value="poRisks">Purchase Order Risks</option>
+                  <option value="invoiceRisks">Invoice Risks</option>
+                </select>
+              </div>
+
+              {/* Contextual Secondary Control */}
+              {activeGraph === 'comparison' && (
+                <select
+                  value={comparisonMetric}
+                  onChange={(e) => handleComparisonMetricChange(e.target.value as any)}
+                  className="bg-surface border border-outline-variant text-on-surface font-sans text-xs rounded px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-primary shadow-sm cursor-pointer"
+                >
+                  <option value="budgetVsReceived">Budget vs Received</option>
+                  <option value="poVsBillPaid">PO vs Bill Paid</option>
+                  <option value="poVsTaxInvoice">PO vs Tax Invoice</option>
+                </select>
+              )}
+
+              {activeGraph === 'projectRisks' && (
+                <div className="flex flex-wrap gap-1">
+                  {(['vendorOverpaid', 'billingAhead', 'stalled'] as const).map((t) => (
+                    <button
+                      key={t}
+                      onClick={() => handleProjectTypeChange(t)}
+                      className={`px-3 py-1.5 rounded-full font-headline text-xs font-semibold transition-all ${
+                        projectRiskType === t
+                          ? 'bg-primary text-on-primary shadow-sm'
+                          : 'bg-surface-container-low/60 text-secondary hover:bg-surface-container-high'
+                      }`}
+                    >
+                      {t === 'vendorOverpaid' ? 'Vendor Overpaid' : t === 'billingAhead' ? 'Billing Ahead' : 'Stalled'}
+                    </button>
+                  ))}
+                </div>
+              )}
+
+              {activeGraph === 'poRisks' && (
+                <div className="flex flex-wrap gap-1">
+                  {(['expiringSoon', 'expiredUncollected', 'stalled'] as const).map((t) => (
+                    <button
+                      key={t}
+                      onClick={() => handlePoTypeChange(t)}
+                      className={`px-3 py-1.5 rounded-full font-headline text-xs font-semibold transition-all ${
+                        poRiskType === t
+                          ? 'bg-primary text-on-primary shadow-sm'
+                          : 'bg-surface-container-low/60 text-secondary hover:bg-surface-container-high'
+                      }`}
+                    >
+                      {t === 'expiringSoon' ? 'Expiring Soon' : t === 'expiredUncollected' ? 'Expired & Uncollected' : 'Stalled'}
+                    </button>
+                  ))}
+                </div>
+              )}
+
+              {activeGraph === 'invoiceRisks' && (
+                <div className="flex flex-wrap gap-1">
+                  {(['overdueUnpaid', 'disputedUnpaid'] as const).map((t) => (
+                    <button
+                      key={t}
+                      onClick={() => handleInvoiceTypeChange(t)}
+                      className={`px-3 py-1.5 rounded-full font-headline text-xs font-semibold transition-all ${
+                        invoiceRiskType === t
+                          ? 'bg-primary text-on-primary shadow-sm'
+                          : 'bg-surface-container-low/60 text-secondary hover:bg-surface-container-high'
+                      }`}
+                    >
+                      {t === 'overdueUnpaid' ? 'Overdue & Unpaid' : 'Disputed & Unpaid'}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* Custom Legend */}
+            <div className="flex items-center gap-3 md:border-l md:border-outline-variant md:pl-4 md:ml-1 select-none">
+              {getLegendItems().map((item, idx) => (
+                <div key={idx} className="flex items-center gap-1.5 text-xs text-secondary font-sans font-medium">
+                  <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: item.color }} />
+                  <span>{item.name}</span>
+                </div>
               ))}
             </div>
           </div>
+        </div>
 
-          {poRiskLoading ? (
-            <div className="flex-1 flex flex-col items-center justify-center p-8 space-y-4">
-              <div className="w-8 h-8 border-3 border-primary border-t-transparent rounded-full animate-spin" aria-hidden="true" />
-              <p className="text-secondary font-sans text-xs">Loading PO risks...</p>
-            </div>
-          ) : poRiskData.series.length === 0 ? (
-            <div className="flex-1 flex flex-col items-center justify-center text-center p-8 bg-surface-container-low/20 rounded-md border border-dashed border-outline-variant/50">
-              <span className="text-secondary font-headline text-sm font-semibold mb-1">
-                No purchase orders currently at risk
-              </span>
-              <span className="text-secondary opacity-60 text-xs">
-                All purchase orders are healthy for this risk category.
-              </span>
-            </div>
-          ) : (
-            <div className="flex-1 h-[320px] w-full dont-translate bhashini-skip-translation">
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={poRiskData.series} margin={{ top: 10, right: 10, left: -20, bottom: 20 }}>
-                  <CartesianGrid vertical={false} stroke={riskCardColors.po.grid} />
-                  <XAxis
-                    dataKey="label"
-                    stroke={riskCardColors.po.axis}
-                    fontSize={10}
-                    fontFamily="Geist"
-                    tickLine={false}
-                    interval={0}
-                    angle={-25}
-                    textAnchor="end"
-                    height={50}
-                  />
-                  <YAxis
-                    stroke={riskCardColors.po.axis}
-                    fontSize={10}
-                    fontFamily="Geist"
-                    tickLine={false}
-                    tickFormatter={poRiskData.chartType === 'single' ? undefined : formatCr}
-                    width={70}
-                  />
-                  <Tooltip
-                    content={<CustomRiskTooltip unitType={poRiskData.chartType === 'single' ? 'days' : 'money'} />}
-                    cursor={{ fill: 'rgba(0,0,0,0.02)' }}
-                  />
-                  {poRiskData.chartType === 'single' ? (
-                    <Bar
-                      dataKey="value1"
-                      name="Days Stalled"
-                      fill={riskCardColors.po.atRisk}
-                      radius={[3, 3, 0, 0]}
-                    />
-                  ) : (
-                    <>
+        {/* Chart Body */}
+        <div className="flex-1 h-[320px] w-full relative">
+          {activeGraph === 'comparison' && (
+            comparisonLoading ? (
+              <div className="h-full flex flex-col items-center justify-center p-8 space-y-4">
+                <div className="w-8 h-8 border-3 border-primary border-t-transparent rounded-full animate-spin" aria-hidden="true" />
+                <p className="text-secondary font-sans text-xs">Loading comparison...</p>
+              </div>
+            ) : comparisonData.length === 0 ? (
+              <ChartEmptyState
+                title="No comparison data available"
+                description="There are no projects to compare for the current selection."
+                isFiltered={!!prjMgrId}
+              />
+            ) : (
+              <div className="absolute inset-0 dont-translate bhashini-skip-translation overflow-x-auto overflow-y-hidden flex justify-start items-stretch">
+                <div style={{ width: computeChartWidth(comparisonData.length), height: '100%' }} className="shrink-0">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart data={comparisonData} margin={{ top: 10, right: 10, left: -20, bottom: 20 }} barSize={30} barGap={4} barCategoryGap="25%">
+                      <CartesianGrid vertical={false} stroke={comparisonColors.grid} />
+                      <XAxis
+                        dataKey="projectCode"
+                        stroke={comparisonColors.axis}
+                        fontSize={10}
+                        fontFamily="Geist"
+                        tickLine={false}
+                        interval={0}
+                        angle={-25}
+                        textAnchor="end"
+                        height={50}
+                      />
+                      <YAxis
+                        stroke={comparisonColors.axis}
+                        fontSize={10}
+                        fontFamily="Geist"
+                        tickLine={false}
+                        tickFormatter={formatCr}
+                        width={70}
+                      />
+                      <Tooltip
+                        content={<CustomRiskTooltip unitType="money" />}
+                        cursor={{ fill: 'rgba(0,0,0,0.02)' }}
+                      />
                       <Bar
                         dataKey="value1"
-                        name="PO Total"
-                        fill={riskCardColors.po.atRisk}
+                        name={
+                          comparisonMetric === 'budgetVsReceived'
+                            ? 'Budget'
+                            : 'PO Amount'
+                        }
+                        fill={comparisonColors[comparisonMetric].val1}
                         radius={[3, 3, 0, 0]}
                       />
                       <Bar
                         dataKey="value2"
-                        name="Client Received"
-                        fill={riskCardColors.po.neutral}
+                        name={
+                          comparisonMetric === 'budgetVsReceived'
+                            ? 'Received'
+                            : comparisonMetric === 'poVsBillPaid'
+                            ? 'Bill Paid'
+                            : 'Tax Invoice'
+                        }
+                        fill={comparisonColors[comparisonMetric].val2}
                         radius={[3, 3, 0, 0]}
                       />
-                    </>
-                  )}
-                </BarChart>
-              </ResponsiveContainer>
-            </div>
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+              </div>
+            )
+          )}
+
+          {activeGraph === 'projectRisks' && (
+            projectRiskLoading ? (
+              <div className="h-full flex flex-col items-center justify-center p-8 space-y-4">
+                <div className="w-8 h-8 border-3 border-primary border-t-transparent rounded-full animate-spin" aria-hidden="true" />
+                <p className="text-secondary font-sans text-xs">Loading project risks...</p>
+              </div>
+            ) : projectRiskData.series.length === 0 ? (
+              <ChartEmptyState
+                title="No projects currently flagged"
+                description="All projects are healthy for this risk category."
+                isFiltered={!!prjMgrId}
+              />
+            ) : (
+              <div className="absolute inset-0 dont-translate bhashini-skip-translation overflow-x-auto overflow-y-hidden flex justify-start items-stretch">
+                <div style={{ width: computeChartWidth(projectRiskData.series.length), height: '100%' }} className="shrink-0">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart data={projectRiskData.series} margin={{ top: 10, right: 10, left: -20, bottom: 20 }} barSize={30} barGap={4} barCategoryGap="25%">
+                      <CartesianGrid vertical={false} stroke={riskColors.grid} />
+                      <XAxis
+                        dataKey="label"
+                        stroke={riskColors.axis}
+                        fontSize={10}
+                        fontFamily="Geist"
+                        tickLine={false}
+                        interval={0}
+                        angle={-25}
+                        textAnchor="end"
+                        height={50}
+                      />
+                      <YAxis
+                        stroke={riskColors.axis}
+                        fontSize={10}
+                        fontFamily="Geist"
+                        tickLine={false}
+                        tickFormatter={projectRiskData.chartType === 'single' ? undefined : formatCr}
+                        width={70}
+                      />
+                      <Tooltip
+                        content={<CustomRiskTooltip unitType={projectRiskData.chartType === 'single' ? 'days' : 'money'} />}
+                        cursor={{ fill: 'rgba(0,0,0,0.02)' }}
+                      />
+                      {projectRiskData.chartType === 'single' ? (
+                        <Bar
+                          dataKey="value1"
+                          name="Days Stalled"
+                          fill={riskColors.atRisk}
+                          radius={[3, 3, 0, 0]}
+                        />
+                      ) : (
+                        <>
+                          <Bar
+                            dataKey="value1"
+                            name={projectRiskType === 'vendorOverpaid' ? 'Vendor Paid' : 'PO Amount'}
+                            fill={riskColors.atRisk}
+                            radius={[3, 3, 0, 0]}
+                          />
+                          <Bar
+                            dataKey="value2"
+                            name="Client Received"
+                            fill={riskColors.neutral}
+                            radius={[3, 3, 0, 0]}
+                          />
+                        </>
+                      )}
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+              </div>
+            )
+          )}
+
+          {activeGraph === 'poRisks' && (
+            poRiskLoading ? (
+              <div className="h-full flex flex-col items-center justify-center p-8 space-y-4">
+                <div className="w-8 h-8 border-3 border-primary border-t-transparent rounded-full animate-spin" aria-hidden="true" />
+                <p className="text-secondary font-sans text-xs">Loading PO risks...</p>
+              </div>
+            ) : poRiskData.series.length === 0 ? (
+              <ChartEmptyState
+                title="No purchase orders currently flagged"
+                description="All purchase orders are healthy for this risk category."
+                isFiltered={!!prjMgrId}
+              />
+            ) : (
+              <div className="absolute inset-0 dont-translate bhashini-skip-translation overflow-x-auto overflow-y-hidden flex justify-start items-stretch">
+                <div style={{ width: computeChartWidth(poRiskData.series.length), height: '100%' }} className="shrink-0">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart data={poRiskData.series} margin={{ top: 10, right: 10, left: -20, bottom: 20 }} barSize={30} barGap={4} barCategoryGap="25%">
+                      <CartesianGrid vertical={false} stroke={riskColors.grid} />
+                      <XAxis
+                        dataKey="label"
+                        stroke={riskColors.axis}
+                        fontSize={10}
+                        fontFamily="Geist"
+                        tickLine={false}
+                        interval={0}
+                        angle={-25}
+                        textAnchor="end"
+                        height={50}
+                      />
+                      <YAxis
+                        stroke={riskColors.axis}
+                        fontSize={10}
+                        fontFamily="Geist"
+                        tickLine={false}
+                        tickFormatter={poRiskData.chartType === 'single' ? undefined : formatCr}
+                        width={70}
+                      />
+                      <Tooltip
+                        content={<CustomRiskTooltip unitType={poRiskData.chartType === 'single' ? 'days' : 'money'} />}
+                        cursor={{ fill: 'rgba(0,0,0,0.02)' }}
+                      />
+                      {poRiskData.chartType === 'single' ? (
+                        <Bar
+                          dataKey="value1"
+                          name="Days Stalled"
+                          fill={riskColors.atRisk}
+                          radius={[3, 3, 0, 0]}
+                        />
+                      ) : (
+                        <>
+                          <Bar
+                            dataKey="value1"
+                            name="PO Total"
+                            fill={riskColors.atRisk}
+                            radius={[3, 3, 0, 0]}
+                          />
+                          <Bar
+                            dataKey="value2"
+                            name="Client Received"
+                            fill={riskColors.neutral}
+                            radius={[3, 3, 0, 0]}
+                          />
+                        </>
+                      )}
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+              </div>
+            )
+          )}
+
+          {activeGraph === 'invoiceRisks' && (
+            invoiceRiskLoading ? (
+              <div className="h-full flex flex-col items-center justify-center p-8 space-y-4">
+                <div className="w-8 h-8 border-3 border-primary border-t-transparent rounded-full animate-spin" aria-hidden="true" />
+                <p className="text-secondary font-sans text-xs">Loading invoice risks...</p>
+              </div>
+            ) : invoiceRiskData.series.length === 0 ? (
+              <ChartEmptyState
+                title="No invoices currently flagged"
+                description="All invoices are healthy for this risk category."
+                isFiltered={!!prjMgrId}
+              />
+            ) : (
+              <div className="absolute inset-0 dont-translate bhashini-skip-translation overflow-x-auto overflow-y-hidden flex justify-start items-stretch">
+                <div style={{ width: computeChartWidth(invoiceRiskData.series.length), height: '100%' }} className="shrink-0">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart data={invoiceRiskData.series} margin={{ top: 10, right: 10, left: -20, bottom: 20 }} barSize={30} barGap={4} barCategoryGap="25%">
+                      <CartesianGrid vertical={false} stroke={riskColors.grid} />
+                      <XAxis
+                        dataKey="label"
+                        stroke={riskColors.axis}
+                        fontSize={10}
+                        fontFamily="Geist"
+                        tickLine={false}
+                        interval={0}
+                        angle={-25}
+                        textAnchor="end"
+                        height={50}
+                      />
+                      <YAxis
+                        stroke={riskColors.axis}
+                        fontSize={10}
+                        fontFamily="Geist"
+                        tickLine={false}
+                        tickFormatter={formatCr}
+                        width={70}
+                      />
+                      <Tooltip
+                        content={<CustomRiskTooltip unitType="money" />}
+                        cursor={{ fill: 'rgba(0,0,0,0.02)' }}
+                      />
+                      <Bar
+                        dataKey="value1"
+                        name="Invoice Amount"
+                        fill={riskColors.neutral}
+                        radius={[3, 3, 0, 0]}
+                      />
+                      <Bar
+                        dataKey="value2"
+                        name="Unpaid Amount"
+                        fill={riskColors.atRisk}
+                        radius={[3, 3, 0, 0]}
+                      />
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+              </div>
+            )
           )}
         </div>
+      </div>
 
-        {/* Card 4: Invoice Risks */}
-        <div className="bg-surface-container-lowest border border-outline-variant p-6 rounded-lg shadow-sm flex flex-col min-h-[460px]">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-4">
-            <div>
-              <h3 className="font-headline text-lg font-bold text-on-surface">Invoice Risks</h3>
-              <p className="font-sans text-xs text-secondary mt-0.5">
-                {invoiceRiskType === 'overdueUnpaid'
-                  ? 'Invoice amount vs. unpaid amount — invoices that remain unpaid 30 days after the invoice date'
-                  : 'Invoice amount vs. unpaid amount — invoices with active client dispute/objection remarks and unpaid balance'}
-              </p>
-            </div>
-            <div className="flex flex-wrap gap-1.5 self-start sm:self-center">
-              {(['overdueUnpaid', 'disputedUnpaid'] as const).map((t) => (
-                <button
-                  key={t}
-                  onClick={() => handleInvoiceTypeChange(t)}
-                  className={`px-3 py-1.5 rounded-full font-headline text-xs font-semibold transition-all ${
-                    invoiceRiskType === t
-                      ? 'bg-primary text-on-primary shadow-sm'
-                      : 'bg-surface-container-low/60 text-secondary hover:bg-surface-container-high'
-                  }`}
+      {/* Needs Attention Section */}
+      <div className="space-y-stack-md pt-6">
+        <div className="border-b border-outline-variant pb-3">
+          <h3 className="font-headline text-xl font-bold text-on-surface">Needs Attention</h3>
+          <p className="font-sans text-xs text-secondary mt-0.5">
+            Operational and compliance risk flags requiring immediate follow-up.
+          </p>
+        </div>
+
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-stack-lg items-start">
+          {/* Column 1: Projects with Problems */}
+          <div id="problems-block" className="bg-surface-container-lowest border border-outline-variant p-6 rounded-lg shadow-sm flex flex-col">
+            <div className="flex items-center justify-between mb-4 border-b border-outline-variant pb-4">
+              <div>
+                <h3 className="font-headline text-lg font-bold text-on-surface">Projects with Problems</h3>
+                <p className="font-sans text-xs text-secondary mt-0.5">
+                  Active projects currently flagged by automatic risk or compliance rules.
+                </p>
+              </div>
+              {metrics.riskBreakdown.atRisk > problemProjects.length && (
+                <Link
+                  to={`/projects?riskVendorOverpaid=true&riskBillingAhead=true&riskStalled=true${prjMgrId ? `&prjMgrId=${prjMgrId}` : ''}`}
+                  className="text-primary hover:text-primary-dark font-sans text-xs font-bold flex items-center gap-1 hover:underline transition-all"
                 >
-                  {t === 'overdueUnpaid' ? 'Overdue & Unpaid' : 'Disputed & Unpaid'}
-                </button>
-              ))}
+                  <span>View All ({metrics.riskBreakdown.atRisk})</span>
+                  <ArrowRight className="w-3.5 h-3.5" />
+                </Link>
+              )}
             </div>
+
+            {problemProjects.length === 0 ? (
+              <div className="flex flex-col items-center justify-center text-center py-10 bg-surface-container-low/20 rounded-md border border-dashed border-outline-variant/50">
+                <CheckCircle className="w-8 h-8 text-status-success-text mb-2" />
+                <span className="text-secondary font-headline text-sm font-semibold mb-1">
+                  No projects currently flagged
+                </span>
+                <span className="text-secondary opacity-60 text-xs">
+                  All active projects are compliant with risk monitoring rules.
+                </span>
+              </div>
+            ) : (
+              <div className="divide-y divide-outline-variant">
+                {problemProjects.map((project) => (
+                  <div
+                    key={project.projectCd}
+                    className="py-4 first:pt-0 last:pb-0 flex flex-col md:flex-row md:items-start justify-between gap-4 group"
+                  >
+                    <div className="space-y-2 flex-1">
+                      <div className="flex items-center gap-2">
+                        <span className="font-headline text-sm font-bold text-primary group-hover:underline">
+                          <Link to={`/projects/${project.projectCd}`}>{project.projectCd}</Link>
+                        </span>
+                        <span className="text-secondary text-xs font-medium">—</span>
+                        <span className="font-headline text-sm font-semibold text-on-surface">
+                          {project.projectName}
+                        </span>
+                      </div>
+
+                      <div className="space-y-1.5 pl-1">
+                        {project.problems.map((prob: any, idx: number) => {
+                          let title = '';
+                          let description = '';
+
+                          if (prob.type === 'vendorOverpaid') {
+                            title = 'Vendor Paid More Than Collected From Client';
+                            description = `NICSI has paid vendors a total of ${formatINR(project.vendorPaidAmount, false)}, which exceeds the ${formatINR(project.amountReceived, false)} received from the client — cash flow risk.`;
+                          } else if (prob.type === 'billingAhead') {
+                            title = 'Billing Ahead of Collection';
+                            description = `Client collections (${formatINR(project.amountReceived, false)}) are below 80% of total PO value (${formatINR(project.poAmount, false)}).`;
+                          } else if (prob.type === 'stalled') {
+                            title = 'Stalled — PO Issued, Nothing Billed Yet';
+                            description = project.daysSincePo !== null
+                              ? `A purchase order was raised ${project.daysSincePo} days ago, but no invoices have been posted to the bill desk yet.`
+                              : 'A purchase order was raised over 60 days ago, but no invoices have been posted to the bill desk yet.';
+                          }
+
+                          return (
+                            <div
+                              key={idx}
+                              className="flex gap-2.5 items-start p-2.5 rounded border border-error/10 bg-error/5 max-w-3xl"
+                            >
+                              <AlertTriangle className="w-4 h-4 text-error shrink-0 mt-0.5" />
+                              <div className="space-y-0.5">
+                                <span className="text-xs font-bold text-on-surface block">{title}</span>
+                                <span className="text-[10px] text-secondary block leading-normal">
+                                  {description}
+                                </span>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+
+                    <div className="self-end md:self-start shrink-0">
+                      <Link
+                        to={`/projects/${project.projectCd}`}
+                        className="h-8 px-3 py-1.5 border border-outline-variant hover:border-primary text-secondary hover:text-primary hover:bg-primary/5 rounded-md font-sans text-xs font-semibold flex items-center gap-1.5 transition-all bg-surface shadow-sm"
+                      >
+                        <span>View Project</span>
+                        <ArrowRight className="w-3.5 h-3.5" />
+                      </Link>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
 
-          {invoiceRiskLoading ? (
-            <div className="flex-1 flex flex-col items-center justify-center p-8 space-y-4">
-              <div className="w-8 h-8 border-3 border-primary border-t-transparent rounded-full animate-spin" aria-hidden="true" />
-              <p className="text-secondary font-sans text-xs">Loading invoice risks...</p>
+          {/* Column 2: Stack of Overdue Invoices and Expired POs */}
+          <div className="space-y-stack-lg">
+            {/* Top Overdue Invoices */}
+            <div className="bg-surface-container-lowest border border-outline-variant p-6 rounded-lg shadow-sm flex flex-col">
+              <div className="flex items-center justify-between mb-4 border-b border-outline-variant pb-4">
+                <div>
+                  <h3 className="font-headline text-lg font-bold text-on-surface">Top Overdue Invoices</h3>
+                  <p className="font-sans text-xs text-secondary mt-0.5">
+                    Unpaid invoices with oldest billing age across the portfolio.
+                  </p>
+                </div>
+              </div>
+
+              {overdueInvoicesLoading ? (
+                <div className="flex flex-col items-center justify-center py-10 space-y-4">
+                  <div className="w-8 h-8 border-3 border-primary border-t-transparent rounded-full animate-spin" aria-hidden="true" />
+                  <p className="text-secondary font-sans text-xs">Loading overdue invoices...</p>
+                </div>
+              ) : overdueInvoices.length === 0 ? (
+                <div className="flex flex-col items-center justify-center text-center py-10 bg-surface-container-low/20 rounded-md border border-dashed border-outline-variant/50">
+                  <CheckCircle className="w-8 h-8 text-status-success-text mb-2" />
+                  <span className="text-secondary font-headline text-sm font-semibold mb-1">
+                    No overdue invoices
+                  </span>
+                  <span className="text-secondary opacity-60 text-xs">
+                    All active invoices are within the standard 30-day payment term.
+                  </span>
+                </div>
+              ) : (
+                <div className="divide-y divide-outline-variant">
+                  {overdueInvoices.map((inv) => (
+                    <div
+                      key={inv.invoiceNum}
+                      className="py-4 first:pt-0 last:pb-0 flex flex-col md:flex-row md:items-start justify-between gap-4 group"
+                    >
+                      <div className="space-y-2 flex-1">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className="font-headline text-sm font-bold text-on-surface bg-surface-container border border-outline-variant px-2 py-0.5 rounded">
+                            {inv.invoiceNum}
+                          </span>
+                          <span className="text-xs text-secondary font-sans">
+                            {inv.projectNo}
+                          </span>
+                          <span className="text-xs text-secondary font-sans border-l border-outline-variant pl-2 font-medium">
+                            {inv.prjNm}
+                          </span>
+                        </div>
+
+                        <div className="flex flex-wrap gap-4 text-xs font-sans text-secondary">
+                          <div>
+                            Vendor: <span className="font-semibold text-on-surface">{inv.vendorName}</span>
+                          </div>
+                          <div>
+                            Amount: <span className="font-semibold text-on-surface">{formatINR(inv.invoiceAmount)}</span>
+                          </div>
+                          <div>
+                            Unpaid: <span className="font-semibold text-error">{formatINR(inv.unpaid)}</span>
+                          </div>
+                        </div>
+
+                        <div className="flex items-center gap-2 mt-1">
+                          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-medium bg-error/15 text-error">
+                            {inv.daysOverdue} days overdue
+                          </span>
+                          <span className="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-medium bg-surface-container border border-outline-variant text-secondary">
+                            Aging: {inv.agingBucket}
+                          </span>
+                        </div>
+                      </div>
+
+                      <div className="self-end md:self-start shrink-0">
+                        <Link
+                          to={`/projects/${inv.projectNo}?tab=invoices&highlight=${inv.invoiceNum}`}
+                          className="h-8 px-3 py-1.5 border border-outline-variant hover:border-primary text-secondary hover:text-primary hover:bg-primary/5 rounded-md font-sans text-xs font-semibold flex items-center gap-1.5 transition-all bg-surface shadow-sm"
+                        >
+                          <span>View Invoice</span>
+                          <ArrowRight className="w-3.5 h-3.5" />
+                        </Link>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
-          ) : invoiceRiskData.series.length === 0 ? (
-            <div className="flex-1 flex flex-col items-center justify-center text-center p-8 bg-surface-container-low/20 rounded-md border border-dashed border-outline-variant/50">
-              <span className="text-secondary font-headline text-sm font-semibold mb-1">
-                No invoices currently at risk
-              </span>
-              <span className="text-secondary opacity-60 text-xs">
-                All invoices are healthy for this risk category.
-              </span>
+
+            {/* Expired Purchase Orders */}
+            <div className="bg-surface-container-lowest border border-outline-variant p-6 rounded-lg shadow-sm flex flex-col">
+              <div className="flex items-center justify-between mb-4 border-b border-outline-variant pb-4">
+                <div>
+                  <h3 className="font-headline text-lg font-bold text-on-surface">Expired Purchase Orders</h3>
+                  <p className="font-sans text-xs text-secondary mt-0.5">
+                    Purchase orders past validity date with uncollected project balances.
+                  </p>
+                </div>
+              </div>
+
+              {expiredPosLoading ? (
+                <div className="flex flex-col items-center justify-center py-10 space-y-4">
+                  <div className="w-8 h-8 border-3 border-primary border-t-transparent rounded-full animate-spin" aria-hidden="true" />
+                  <p className="text-secondary font-sans text-xs">Loading expired POs...</p>
+                </div>
+              ) : expiredPos.length === 0 ? (
+                <div className="flex flex-col items-center justify-center text-center py-10 bg-surface-container-low/20 rounded-md border border-dashed border-outline-variant/50">
+                  <CheckCircle className="w-8 h-8 text-status-success-text mb-2" />
+                  <span className="text-secondary font-headline text-sm font-semibold mb-1">
+                    No expired purchase orders
+                  </span>
+                  <span className="text-secondary opacity-60 text-xs">
+                    All active purchase orders are within their validity periods.
+                  </span>
+                </div>
+              ) : (
+                <div className="divide-y divide-outline-variant">
+                  {expiredPos.map((po) => {
+                    const collectionGap = po.total - po.amountReceived;
+                    return (
+                      <div
+                        key={po.finalPoNo}
+                        className="py-4 first:pt-0 last:pb-0 flex flex-col md:flex-row md:items-start justify-between gap-4 group"
+                      >
+                        <div className="space-y-2 flex-1">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <span className="font-headline text-sm font-bold text-on-surface bg-surface-container border border-outline-variant px-2 py-0.5 rounded">
+                              {po.finalPoNo}
+                            </span>
+                            <span className="text-xs text-secondary font-sans">
+                              {po.projectNo}
+                            </span>
+                            <span className="text-xs text-secondary font-sans border-l border-outline-variant pl-2 font-medium">
+                              {po.prjNm}
+                            </span>
+                          </div>
+
+                          <div className="flex flex-wrap gap-4 text-xs font-sans text-secondary">
+                            <div>
+                              Vendor: <span className="font-semibold text-on-surface">{po.vendorName}</span>
+                            </div>
+                            <div>
+                              PO Total: <span className="font-semibold text-on-surface">{formatINR(po.total)}</span>
+                            </div>
+                            <div>
+                              Uncollected Gap: <span className="font-semibold text-error">{formatINR(collectionGap)}</span>
+                            </div>
+                          </div>
+
+                          <div className="flex items-center gap-2 mt-1">
+                            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-medium bg-error/15 text-error">
+                              {po.daysExpired} days expired
+                            </span>
+                            <span className="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-medium bg-surface-container border border-outline-variant text-secondary">
+                              Valid To: {new Date(po.validTo).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}
+                            </span>
+                          </div>
+                        </div>
+
+                        <div className="self-end md:self-start shrink-0">
+                          <Link
+                            to={`/projects/${po.projectNo}?tab=purchaseorders&highlight=${po.finalPoNo}`}
+                            className="h-8 px-3 py-1.5 border border-outline-variant hover:border-primary text-secondary hover:text-primary hover:bg-primary/5 rounded-md font-sans text-xs font-semibold flex items-center gap-1.5 transition-all bg-surface shadow-sm"
+                          >
+                            <span>View PO</span>
+                            <ArrowRight className="w-3.5 h-3.5" />
+                          </Link>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
             </div>
-          ) : (
-            <div className="flex-1 h-[320px] w-full dont-translate bhashini-skip-translation">
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={invoiceRiskData.series} margin={{ top: 10, right: 10, left: -20, bottom: 20 }}>
-                  <CartesianGrid vertical={false} stroke={riskCardColors.invoice.grid} />
-                  <XAxis
-                    dataKey="label"
-                    stroke={riskCardColors.invoice.axis}
-                    fontSize={10}
-                    fontFamily="Geist"
-                    tickLine={false}
-                    interval={0}
-                    angle={-25}
-                    textAnchor="end"
-                    height={50}
-                  />
-                  <YAxis
-                    stroke={riskCardColors.invoice.axis}
-                    fontSize={10}
-                    fontFamily="Geist"
-                    tickLine={false}
-                    tickFormatter={formatCr}
-                    width={70}
-                  />
-                  <Tooltip
-                    content={<CustomRiskTooltip unitType="money" />}
-                    cursor={{ fill: 'rgba(0,0,0,0.02)' }}
-                  />
-                  <Bar
-                    dataKey="value1"
-                    name="Invoice Amount"
-                    fill={riskCardColors.invoice.neutral}
-                    radius={[3, 3, 0, 0]}
-                  />
-                  <Bar
-                    dataKey="value2"
-                    name="Unpaid Amount"
-                    fill={riskCardColors.invoice.atRisk}
-                    radius={[3, 3, 0, 0]}
-                  />
-                </BarChart>
-              </ResponsiveContainer>
-            </div>
-          )}
+          </div>
         </div>
       </div>
     </div>
