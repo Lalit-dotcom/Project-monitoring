@@ -273,89 +273,13 @@ export const ProjectDetail: React.FC = () => {
 
   // Stat Calculations
   const poAmount = project.poAmount;
-  const receivedAmount = project.amountPaid;
+  const receivedAmount = project.amountReceived;
   const paidAmount = project.amountPaid;
 
   const receivedPct = poAmount > 0 ? Math.round((receivedAmount / poAmount) * 100) : 0;
   const paidPct = poAmount > 0 ? Math.round((paidAmount / poAmount) * 100) : 0;
 
-  // Aging buckets & Financial Health Calculation
-  let currentOverdue = 0;
-  let overdue30_60 = 0;
-  let overdue60_90 = 0;
-  let overdue90_plus = 0;
-  const todayForAging = new Date();
 
-  invoices.forEach((inv) => {
-    const unpaid = (inv.invoiceAmount || 0) - (inv.amountPaid || 0);
-    if (unpaid <= 0) return;
-
-    if (!inv.invoiceDate) {
-      currentOverdue += unpaid;
-      return;
-    }
-    const invDate = new Date(inv.invoiceDate);
-    const diffTime = Math.abs(todayForAging.getTime() - invDate.getTime());
-    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-
-    if (diffDays <= 30) {
-      currentOverdue += unpaid;
-    } else if (diffDays <= 60) {
-      overdue30_60 += unpaid;
-    } else if (diffDays <= 90) {
-      overdue60_90 += unpaid;
-    } else {
-      overdue90_plus += unpaid;
-    }
-  });
-
-  const totalInvoiced = invoices.reduce((sum, inv) => sum + (inv.invoiceAmount || 0), 0);
-  const totalBudget = project.prjBudgetNo || 0;
-  const normalizationBase = Math.max(totalInvoiced, totalBudget) || 1;
-  const totalPenalty = (currentOverdue * 0) + (overdue30_60 * 0.3) + (overdue60_90 * 0.6) + (overdue90_plus * 1.0);
-  
-  const computedHealth = Math.max(0, Math.min(100, 100 - (totalPenalty / normalizationBase) * 100));
-
-  // Determine Priority Level based on overdue/risk state
-  let computedPriority = 'Low';
-  const totalOverdue = overdue30_60 + overdue60_90 + overdue90_plus;
-  if (overdue90_plus > 0 || (totalOverdue / normalizationBase) > 0.2 || computedHealth < 60) {
-    computedPriority = 'High';
-  } else if (overdue30_60 > 0 || overdue60_90 > 0 || computedHealth < 85) {
-    computedPriority = 'Medium';
-  }
-
-  let overdue90_plus_count = 0;
-  let total_overdue_count = 0;
-
-  invoices.forEach(inv => {
-    const unpaid = inv.unpaid || 0;
-    if (unpaid <= 0) return;
-    const invDate = new Date(inv.invoiceDate || '');
-    if (isNaN(invDate.getTime())) return;
-    const diffTime = Math.abs(new Date().getTime() - invDate.getTime());
-    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-    
-    total_overdue_count++;
-    if (diffDays > 90) {
-      overdue90_plus_count++;
-    }
-  });
-
-  let priorityTooltip = '';
-  if (computedPriority === 'High') {
-    if (overdue90_plus > 0) {
-      priorityTooltip = `High — ${formatINR(overdue90_plus, false)} across ${overdue90_plus_count} invoice${overdue90_plus_count > 1 ? 's' : ''} overdue 90+ days.`;
-    } else if ((totalOverdue / normalizationBase) > 0.2) {
-      priorityTooltip = `High — total overdue is ${((totalOverdue / normalizationBase) * 100).toFixed(0)}% of project base, exceeding 20% limit.`;
-    } else {
-      priorityTooltip = `High — project financial health score is critical (${computedHealth.toFixed(1)}%).`;
-    }
-  } else if (computedPriority === 'Medium') {
-    priorityTooltip = `Medium — some overdue exposure exists (${formatINR(totalOverdue, false)} across ${total_overdue_count} invoice${total_overdue_count > 1 ? 's' : ''}).`;
-  } else {
-    priorityTooltip = 'Low — no significant overdue exposure.';
-  }
 
   // Problems / Risk Flags Calculations
   const getActiveProblems = () => {
@@ -1007,7 +931,7 @@ export const ProjectDetail: React.FC = () => {
                 // Build chart data from the current project's fields
                 const budget = project.prjBudgetNo ?? 0;
                 const poAmount = project.poAmount ?? 0;
-                const received = project.amountPaid ?? 0;
+                const received = project.amountReceived ?? 0;
                 const poCount = project.noOfPo ?? 0;
 
                 const barColors = theme === 'dark'
@@ -1225,21 +1149,9 @@ export const ProjectDetail: React.FC = () => {
             {/* Project Details block */}
             <div className="bg-surface-container-lowest border border-outline-variant rounded-md p-6 shadow-sm font-sans space-y-4">
               <h3 className="font-headline text-base font-bold text-on-surface mb-2">Project Details</h3>
-              <div className="flex justify-between items-center pb-3 border-b border-outline-variant">
+              <div className="flex justify-between items-center">
                 <span className="text-secondary text-sm">Contract Duration</span>
                 <span className="font-bold text-sm text-on-surface">{computedDuration}</span>
-              </div>
-              <div className="flex justify-between items-center" title={priorityTooltip}>
-                <span className="text-secondary text-sm">Priority Level</span>
-                <span className={`px-2.5 py-0.5 rounded-full font-bold text-[10px] uppercase border cursor-help ${
-                  computedPriority === 'High' 
-                    ? 'bg-red-50 text-red-700 border-red-200' 
-                    : computedPriority === 'Medium' 
-                    ? 'bg-amber-50 text-amber-700 border-amber-200' 
-                    : 'bg-secondary/10 text-secondary border-outline-variant'
-                }`}>
-                  {computedPriority} Priority
-                </span>
               </div>
             </div>
 

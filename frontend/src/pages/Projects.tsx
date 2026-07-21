@@ -1242,7 +1242,7 @@ export const Projects: React.FC = () => {
                       Customer Name
                     </th>
                     <th className="px-6 py-4 font-headline text-xs font-bold text-secondary uppercase tracking-wider text-right">
-                      Budget Number
+                      Budget
                     </th>
                     <th className="px-6 py-4 font-headline text-xs font-bold text-secondary uppercase tracking-wider text-right">
                       Project ABP
@@ -1330,11 +1330,11 @@ export const Projects: React.FC = () => {
                       <td className="px-6 py-5 text-sm text-on-surface">
                         {renderTruncatedText(p.customerName, "max-w-[200px]")}
                       </td>
-                      <td className="px-6 py-5 text-right font-mono text-sm text-secondary dont-translate bhashini-skip-translation">
-                        {renderFallback(p.prjBudgetNo)}
+                      <td className="px-6 py-5 text-right font-semibold text-sm text-on-surface dont-translate bhashini-skip-translation">
+                        {formatFullINR(p.prjBudgetNo)}
                       </td>
-                      <td className="px-6 py-5 text-right font-mono text-sm text-secondary dont-translate bhashini-skip-translation">
-                        {renderFallback(p.projectAbp)}
+                      <td className="px-6 py-5 text-right font-semibold text-sm text-on-surface dont-translate bhashini-skip-translation">
+                        {formatFullINR(p.projectAbp)}
                       </td>
                       <td className="px-6 py-5 text-right font-semibold text-sm text-on-surface dont-translate bhashini-skip-translation">
                         {formatFullINR(p.poAmount)}

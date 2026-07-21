@@ -85,6 +85,11 @@ const fetchWithAuth = async (url: string, options: RequestInit = {}): Promise<Re
 
 
 const mapDbProjectToProject = (dbProj: DatabaseProject): Project & DatabaseProject => {
+  const prjBudgetNo = dbProj.prjBudgetNo ?? (dbProj as any).prj_budget_no ?? 0;
+  const amountReceived = dbProj.amountReceived ?? (dbProj as any).amount_received ?? 0;
+  const poAmount = dbProj.poAmount ?? (dbProj as any).po_amount ?? 0;
+  const totalAmountPaid = dbProj.totalAmountPaid ?? (dbProj as any).total_amount_paid ?? (dbProj as any).amountPaid ?? 0;
+
   return {
     ...dbProj,
     id: dbProj.projectCd,
@@ -92,18 +97,20 @@ const mapDbProjectToProject = (dbProj: DatabaseProject): Project & DatabaseProje
     client: dbProj.customerName,
     department: dbProj.prjType || 'ZO',
     status: dbProj.paymentStatus,
-    poCount: dbProj.noOfPo || 0,
-    poAmount: dbProj.poAmount || 0,
-    invoiceAmount: dbProj.totalInvoiceAmount || 0,
-    amountPaid: dbProj.totalAmountPaid || 0,
-    taxInvoiceAmount: dbProj.totalTaxInvoiceAmount || 0,
+    poCount: dbProj.noOfPo || (dbProj as any).no_of_po || 0,
+    poAmount: Number(poAmount),
+    invoiceAmount: Number(dbProj.totalInvoiceAmount || (dbProj as any).total_invoice_amount || 0),
+    amountPaid: Number(totalAmountPaid),
+    totalAmountPaid: Number(totalAmountPaid),
+    taxInvoiceAmount: Number(dbProj.totalTaxInvoiceAmount || (dbProj as any).total_tax_invoice_amount || 0),
     description: dbProj.prjNm,
     location: '',
     duration: '18 Months',
     manager: dbProj.prjMgrName || 'Unassigned',
-    priority: (dbProj.poAmount || 0) > 1000000 ? 'High' : (dbProj.poAmount || 0) > 200000 ? 'Medium' : 'Low',
+    priority: Number(poAmount) > 1000000 ? 'High' : Number(poAmount) > 200000 ? 'Medium' : 'Low',
     healthScore: 100,
-    amountReceived: dbProj.amountReceived || 0,
+    prjBudgetNo: Number(prjBudgetNo),
+    amountReceived: Number(amountReceived),
     createdOn: dbProj.createdOn || ''
   };
 };

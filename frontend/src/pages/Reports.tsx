@@ -375,8 +375,9 @@ NICSI Accounts Division
     const monthlyMap: { [key: string]: { PO: number; Received: number; Paid: number; sortKey: number } } = {};
     
     (purchaseOrders || []).forEach((po: any) => {
-      if (!po.poDate) return;
-      const d = new Date(po.poDate);
+      const poDateVal = po.po_date || po.poDate;
+      if (!poDateVal) return;
+      const d = new Date(poDateVal);
       if (isNaN(d.getTime())) return;
       const mName = monthNames[d.getMonth()];
       const year = d.getFullYear();
@@ -385,12 +386,13 @@ NICSI Accounts Division
       if (!monthlyMap[key]) {
         monthlyMap[key] = { PO: 0, Received: 0, Paid: 0, sortKey };
       }
-      monthlyMap[key].PO += (po.total || 0);
+      monthlyMap[key].PO += (Number(po.total) || 0);
     });
 
     (invoices || []).forEach((inv: any) => {
-      if (!inv.invoiceDate) return;
-      const d = new Date(inv.invoiceDate);
+      const invDateVal = inv.invoice_date || inv.invoiceDate;
+      if (!invDateVal) return;
+      const d = new Date(invDateVal);
       if (isNaN(d.getTime())) return;
       const mName = monthNames[d.getMonth()];
       const year = d.getFullYear();
@@ -399,8 +401,10 @@ NICSI Accounts Division
       if (!monthlyMap[key]) {
         monthlyMap[key] = { PO: 0, Received: 0, Paid: 0, sortKey };
       }
-      monthlyMap[key].Received += (inv.invoiceAmount || 0);
-      monthlyMap[key].Paid += (inv.amountPaid || 0);
+      const invAmt = Number(inv.invoice_amount ?? inv.invoiceAmount ?? 0);
+      const amtPaid = Number(inv.amount_paid ?? inv.amountPaid ?? 0);
+      monthlyMap[key].Received += invAmt;
+      monthlyMap[key].Paid += amtPaid;
     });
 
     lifecycleData = Object.entries(monthlyMap)
@@ -427,14 +431,15 @@ NICSI Accounts Division
     const today = new Date();
     
     (invoices || []).forEach((inv: any) => {
-      const unpaid = inv.unpaid || 0;
+      const unpaid = Number(inv.unpaid || 0);
       if (unpaid <= 0) return;
       
-      if (!inv.invoiceDate) {
+      const invDateVal = inv.invoice_date || inv.invoiceDate;
+      if (!invDateVal) {
         current += unpaid;
         return;
       }
-      const invDate = new Date(inv.invoiceDate);
+      const invDate = new Date(invDateVal);
       const diffTime = Math.abs(today.getTime() - invDate.getTime());
       const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
       
@@ -465,27 +470,27 @@ NICSI Accounts Division
 
     // Top channels
     topChannels = [...(projects || [])]
-      .sort((a, b) => (b.po_amount || 0) - (a.po_amount || 0))
+      .sort((a, b) => (Number(b.po_amount) || 0) - (Number(a.po_amount) || 0))
       .slice(0, 4);
-    maxPoAmount = topChannels[0]?.po_amount || 1;
+    maxPoAmount = Number(topChannels[0]?.po_amount) || 1;
 
     // Quick Insights
-    const paidInvoices = (invoices || []).filter((i: any) => i.invoiceDate && i.glDate && (i.amountPaid || 0) > 0);
+    const paidInvoices = (invoices || []).filter((i: any) => (i.invoice_date || i.invoiceDate) && (i.gl_date || i.glDate) && Number(i.amount_paid || i.amountPaid || 0) > 0);
     if (paidInvoices.length > 0) {
       const totalDays = paidInvoices.reduce((sum: number, i: any) => {
-        const start = new Date(i.invoiceDate!);
-        const end = new Date(i.glDate!);
+        const start = new Date(i.invoice_date || i.invoiceDate!);
+        const end = new Date(i.gl_date || i.glDate!);
         const diff = Math.ceil((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24));
         return sum + Math.max(0, diff);
       }, 0);
       avgCollectionTime = Math.round(totalDays / paidInvoices.length);
     }
 
-    const totalBudget = (projects || []).reduce((sum: number, p: any) => sum + Number(p.prjBudgetNo || 0), 0);
-    const totalInvoiced = (projects || []).reduce((sum: number, p: any) => sum + Number(p.totalInvoiceAmount || p.invoiceAmount || 0), 0);
+    const totalBudget = (projects || []).reduce((sum: number, p: any) => sum + Number(p.prj_budget_no || p.prjBudgetNo || 0), 0);
+    const totalInvoiced = (projects || []).reduce((sum: number, p: any) => sum + Number(p.total_invoice_amount || p.totalInvoiceAmount || p.invoiceAmount || 0), 0);
     unbilledRevenue = Math.max(0, totalBudget - totalInvoiced);
 
-    disputedInvoicesCount = (invoices || []).filter((i: any) => i.objection && i.objection !== '' && (i.unpaid || 0) > 0).length;
+    disputedInvoicesCount = (invoices || []).filter((i: any) => i.objection && i.objection !== '' && Number(i.unpaid || 0) > 0).length;
   }
 
   const reportsList = [

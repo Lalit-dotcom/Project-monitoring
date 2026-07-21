@@ -35,11 +35,11 @@ function buildVendorNoticePreview(p: Project & DatabaseProject): string {
   const today = todayLong();
   const year = new Date().getFullYear();
   const refCode = `NICSI/PMD/${year}/${p.projectCd}/${p.projectCd}`;
-  const poAmt   = Number(p.poAmount ?? 0);
-  const paid    = Number(p.totalAmountPaid ?? 0);
+  const poAmt   = Number(p.poAmount ?? (p as any).po_amount ?? 0);
+  const paid    = Number(p.totalAmountPaid ?? (p as any).total_amount_paid ?? (p as any).amountPaid ?? 0);
   const balance = Math.max(0, poAmt - paid);
-  const noBills = Number(p.noOfExpInvoice ?? 0);
-  const noTax   = Number(p.noOfTaxInvoice ?? 0);
+  const noBills = Number(p.noOfExpInvoice ?? (p as any).no_of_exp_invoice ?? 0);
+  const noTax   = Number(p.noOfTaxInvoice ?? (p as any).no_of_tax_invoice ?? 0);
 
   return `
 <div style="font-family:Arial,sans-serif;font-size:13px;line-height:1.7;color:#1a1a2e;">
@@ -99,9 +99,9 @@ function buildClientNoticePreview(p: Project & DatabaseProject): string {
   const today = todayLong();
   const year = new Date().getFullYear();
   const refCode = `NICSI/PMD/${year}/${p.projectCd}/${p.projectCd}`;
-  const poAmt       = Number(p.poAmount ?? 0);
-  const amtReceived = Number(p.amountReceived ?? 0);
-  const pending     = Math.max(0, poAmt - amtReceived);
+  const budget      = Number(p.prjBudgetNo ?? (p as any).prj_budget_no ?? 0);
+  const amtReceived = Number(p.amountReceived ?? (p as any).amount_received ?? 0);
+  const pending     = Math.max(0, budget - amtReceived);
 
   return `
 <div style="font-family:Arial,sans-serif;font-size:13px;line-height:1.7;color:#1a1a2e;">
@@ -131,7 +131,7 @@ function buildClientNoticePreview(p: Project & DatabaseProject): string {
         </tr>
       </thead>
       <tbody>
-        <tr><td style="padding:6px 10px;border:1px solid #c8d4e8;">Total PO Value Allotted</td><td style="padding:6px 10px;border:1px solid #c8d4e8;text-align:right;font-family:monospace;">${fmtINR(poAmt)}</td></tr>
+        <tr><td style="padding:6px 10px;border:1px solid #c8d4e8;">Total Project Sanctioned Budget</td><td style="padding:6px 10px;border:1px solid #c8d4e8;text-align:right;font-family:monospace;">${fmtINR(budget)}</td></tr>
         <tr><td style="padding:6px 10px;border:1px solid #c8d4e8;">Amount Received from Client</td><td style="padding:6px 10px;border:1px solid #c8d4e8;text-align:right;font-family:monospace;">${fmtINR(amtReceived)}</td></tr>
         <tr style="background:#f0f4ff;font-weight:700;"><td style="padding:6px 10px;border:1px solid #c8d4e8;">Pending Funds to be Released</td><td style="padding:6px 10px;border:1px solid #c8d4e8;text-align:right;font-family:monospace;">${fmtINR(pending)}</td></tr>
       </tbody>
@@ -193,12 +193,13 @@ export const NoticeModal: React.FC<NoticeModalProps> = ({ open, project, onClose
   if (!open || !project) return null;
 
   // ── Business logic guards ────────────────────────────────────────────────
-  const poAmt       = Number(project.poAmount ?? 0);
-  const amtReceived = Number(project.amountReceived ?? 0);
-  const amtPaid     = Number(project.totalAmountPaid ?? 0);
+  const poAmt       = Number(project.poAmount ?? (project as any).po_amount ?? 0);
+  const budget      = Number(project.prjBudgetNo ?? (project as any).prj_budget_no ?? 0);
+  const amtReceived = Number(project.amountReceived ?? (project as any).amount_received ?? 0);
+  const amtPaid     = Number(project.totalAmountPaid ?? (project as any).total_amount_paid ?? (project as any).amountPaid ?? 0);
   const pendingBills  = Math.max(0, poAmt - amtPaid);
-  const pendingFunds  = Math.max(0, poAmt - amtReceived);
-  const clientDisabled = amtReceived >= poAmt;
+  const pendingFunds  = Math.max(0, budget - amtReceived);
+  const clientDisabled = amtReceived >= budget;
   const vendorDisabled = pendingBills <= 0;
 
   // ── Handlers ─────────────────────────────────────────────────────────────

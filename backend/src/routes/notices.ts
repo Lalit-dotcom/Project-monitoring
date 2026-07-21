@@ -152,9 +152,9 @@ function buildClientNoticeHtml(p: Record<string, any>): string {
   const currentYear = new Date().getFullYear();
   const refCode = `NICSI/PMD/${currentYear}/${p.project_cd}/${p.project_cd}`;
 
-  const poAmt        = Number(p.po_amount ?? 0);
+  const budget       = Number(p.prj_budget_no ?? 0);
   const amtReceived  = Number(p.amount_received ?? 0);
-  const pendingFunds = Math.max(0, poAmt - amtReceived);
+  const pendingFunds = Math.max(0, budget - amtReceived);
 
   const body = `
     ${letterheadHtml()}
@@ -191,7 +191,7 @@ function buildClientNoticeHtml(p: Record<string, any>): string {
           </tr>
         </thead>
         <tbody>
-          ${tableRow('Total PO Value Allotted', fmtINR(poAmt))}
+          ${tableRow('Total Project Sanctioned Budget', fmtINR(budget))}
           ${tableRow('Amount Received from Client', fmtINR(amtReceived))}
           ${tableRow('Pending Funds to be Released', fmtINR(pendingFunds), true)}
         </tbody>
@@ -260,6 +260,7 @@ router.post('/send', requireAuth, async (req: Request, res: Response): Promise<v
          prj_nm,
          customer_name,
          po_amount,
+         prj_budget_no,
          amount_received,
          total_amount_paid,
          no_of_exp_invoice,
@@ -286,10 +287,10 @@ router.post('/send', requireAuth, async (req: Request, res: Response): Promise<v
 
     // Validate business logic for client notice
     if (noticeType === 'client_pending_funds') {
-      const poAmt       = Number(p.po_amount ?? 0);
-      const amtReceived = Number(p.amount_received ?? 0);
-      if (amtReceived >= poAmt) {
-        res.status(400).json({ error: 'No pending funds — amount received equals or exceeds PO amount' });
+      const budget       = Number(p.prj_budget_no ?? 0);
+      const amtReceived  = Number(p.amount_received ?? 0);
+      if (amtReceived >= budget) {
+        res.status(400).json({ error: 'No pending funds — amount received equals or exceeds project budget' });
         return;
       }
     }
