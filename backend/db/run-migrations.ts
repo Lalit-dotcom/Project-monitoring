@@ -61,6 +61,7 @@ async function migrate() {
       ALTER TABLE users ADD COLUMN IF NOT EXISTS totp_backup_codes TEXT[];
       ALTER TABLE users ADD COLUMN IF NOT EXISTS totp_temp_secret TEXT;
       ALTER TABLE users ADD COLUMN IF NOT EXISTS email TEXT;
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS must_change_password BOOLEAN DEFAULT FALSE;
     `);
 
     console.log('Adding new columns to sessions table if they do not exist...');

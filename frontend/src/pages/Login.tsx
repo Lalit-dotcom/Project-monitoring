@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { User, Lock, ArrowRight, Check } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { toast } from '../lib/toast';
+import { api } from '../lib/api';
 
 export const Login: React.FC = () => {
   const navigate = useNavigate();
@@ -18,6 +19,12 @@ export const Login: React.FC = () => {
   const [mfaToken, setMfaToken] = useState('');
   const [mfaCode, setMfaCode] = useState('');
   const [useBackupCode, setUseBackupCode] = useState(false);
+
+  // Forced Password Change states
+  const [requiresPasswordChange, setRequiresPasswordChange] = useState(false);
+  const [changeTempToken, setChangeTempToken] = useState('');
+  const [requiredNewPassword, setRequiredNewPassword] = useState('');
+  const [requiredConfirmPassword, setRequiredConfirmPassword] = useState('');
 
   // Forgot Password states
   const [forgotPasswordMode, setForgotPasswordMode] = useState(false);
@@ -131,7 +138,13 @@ export const Login: React.FC = () => {
     setIsSubmitting(true);
     try {
       const data = await login(email, password);
-      if (data && data.mfaRequired) {
+      if (data && data.requiresPasswordChange) {
+        setRequiresPasswordChange(true);
+        setChangeTempToken(data.tempToken);
+        setRequiredNewPassword('');
+        setRequiredConfirmPassword('');
+        toast.info('You must set a new password before continuing.');
+      } else if (data && data.mfaRequired) {
         setMfaRequired(true);
         setMfaToken(data.mfaToken);
         setMfaCode('');
@@ -142,6 +155,37 @@ export const Login: React.FC = () => {
       }
     } catch (err: any) {
       toast.error(`Login failed — ${err.message || 'Invalid username or password'}`);
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleRequiredPasswordChangeSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!requiredNewPassword || !requiredConfirmPassword) {
+      toast.error('Both password fields are required');
+      return;
+    }
+    if (requiredNewPassword !== requiredConfirmPassword) {
+      toast.error('Passwords do not match');
+      return;
+    }
+    if (requiredNewPassword.length < 6) {
+      toast.error('Password must be at least 6 characters long');
+      return;
+    }
+    setIsSubmitting(true);
+    try {
+      const data = await api.changeRequiredPassword(changeTempToken, requiredNewPassword);
+      if (data.accessToken && data.user) {
+        setSession(data.accessToken, data.user);
+        toast.success('Password updated successfully — welcome to NPMS!');
+        navigate('/dashboard');
+      } else {
+        throw new Error('Failed to update password');
+      }
+    } catch (err: any) {
+      toast.error(err.message || 'Failed to update password');
     } finally {
       setIsSubmitting(false);
     }
@@ -262,7 +306,82 @@ export const Login: React.FC = () => {
 
           {/* Center Form Section */}
           <div className="space-y-6 my-auto max-w-[380px] w-full mx-auto">
-            {forgotPasswordMode ? (
+            {requiresPasswordChange ? (
+              <>
+                <div className="space-y-1.5">
+                  <h1 className="font-headline text-3xl font-extrabold text-[#14335C] tracking-tight">
+                    Set New Password
+                  </h1>
+                  <p className="font-sans text-xs text-[#6B7280]">
+                    Your account requires a password change before proceeding.
+                  </p>
+                </div>
+
+                <form className="space-y-4" onSubmit={handleRequiredPasswordChangeSubmit} aria-label="Required password change form">
+                  <div className="relative group">
+                    <div className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400 group-focus-within:text-[#0D9488] transition-colors pointer-events-none">
+                      <Lock className="w-5 h-5" />
+                    </div>
+                    <input 
+                      id="requiredNewPassword"
+                      type="password"
+                      required
+                      placeholder="New Password (min 6 chars)"
+                      value={requiredNewPassword}
+                      onChange={(e) => setRequiredNewPassword(e.target.value)}
+                      className="w-full h-12 pl-11 pr-4 rounded-xl bg-[#F3F4F6] text-sm text-[#14335C] placeholder-gray-400 border-none outline-none focus:bg-white focus:ring-2 focus:ring-[#0D9488] transition-all"
+                      aria-label="New Password"
+                    />
+                  </div>
+
+                  <div className="relative group">
+                    <div className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400 group-focus-within:text-[#0D9488] transition-colors pointer-events-none">
+                      <Lock className="w-5 h-5" />
+                    </div>
+                    <input 
+                      id="requiredConfirmPassword"
+                      type="password"
+                      required
+                      placeholder="Confirm New Password"
+                      value={requiredConfirmPassword}
+                      onChange={(e) => setRequiredConfirmPassword(e.target.value)}
+                      className="w-full h-12 pl-11 pr-4 rounded-xl bg-[#F3F4F6] text-sm text-[#14335C] placeholder-gray-400 border-none outline-none focus:bg-white focus:ring-2 focus:ring-[#0D9488] transition-all"
+                      aria-label="Confirm New Password"
+                    />
+                  </div>
+
+                  <div className="space-y-4 pt-2">
+                    <button
+                      type="submit"
+                      disabled={isSubmitting}
+                      className="w-full h-12 bg-[#0D9488] hover:bg-[#0F766E] text-white font-headline text-sm font-semibold rounded-xl flex items-center justify-center gap-2 shadow-sm transition-all duration-200 hover:scale-[1.01] active:scale-[0.99] disabled:opacity-60 disabled:cursor-not-allowed focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0D9488] focus-visible:ring-offset-2"
+                    >
+                      {isSubmitting ? (
+                        <>
+                          <span className="w-4 h-4 border-2 border-white/40 border-t-white rounded-full animate-spin" aria-hidden="true" />
+                          <span>Updating Password...</span>
+                        </>
+                      ) : (
+                        <>
+                          <span>Save &amp; Continue</span>
+                          <ArrowRight className="w-4 h-4" aria-hidden="true" />
+                        </>
+                      )}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setRequiresPasswordChange(false);
+                        setChangeTempToken('');
+                      }}
+                      className="w-full h-12 border border-gray-300 text-gray-700 hover:bg-gray-50 font-headline text-xs font-semibold rounded-xl flex items-center justify-center gap-2 transition-all"
+                    >
+                      <span>Back to Sign In</span>
+                    </button>
+                  </div>
+                </form>
+              </>
+            ) : forgotPasswordMode ? (
               <>
                 {forgotStep === 'username' && (
                   <>

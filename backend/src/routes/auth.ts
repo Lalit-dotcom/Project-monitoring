@@ -80,7 +80,7 @@ router.post('/login', async (req: Request, res: Response): Promise<void> => {
   try {
     // 2. Validate Credentials against DB
     const userResult = await pool.query(
-      `SELECT u.id, u.username, u.password_hash, u.role, u.prj_mgr_id, u.totp_enabled, pm.prj_mgr_name
+      `SELECT u.id, u.username, u.password_hash, u.role, u.prj_mgr_id, u.totp_enabled, u.must_change_password, pm.prj_mgr_name
        FROM users u
        LEFT JOIN project_managers pm ON u.prj_mgr_id = pm.prj_mgr_id
        WHERE u.username = $1`,
@@ -117,6 +117,27 @@ router.post('/login', async (req: Request, res: Response): Promise<void> => {
           details: {}
         });
         res.json({ mfaRequired: true, mfaToken });
+        return;
+      }
+
+      // Check if password change is required
+      if (userRow.must_change_password) {
+        const tempSecret = process.env.JWT_SECRET || 'super_secret_placeholder_change_me';
+        const tempToken = jwt.sign(
+          { userId: userRow.id, username: userRow.username, purpose: 'required_password_change' },
+          tempSecret,
+          { expiresIn: '10m' }
+        );
+        await logAudit({
+          userId: userRow.id,
+          username: userRow.username,
+          category: 'LOGIN',
+          action: 'REQUIRED_PASSWORD_CHANGE_CHALLENGE',
+          status: 'SUCCESS',
+          ip,
+          details: {}
+        });
+        res.json({ requiresPasswordChange: true, tempToken, username: userRow.username });
         return;
       }
 
@@ -251,7 +272,7 @@ router.post('/forgot-password', async (req: Request, res: Response): Promise<voi
 
   try {
     const userResult = await pool.query(
-      `SELECT email FROM users WHERE username = $1`,
+      `SELECT id, email, role FROM users WHERE username = $1`,
       [username]
     );
 
@@ -261,7 +282,24 @@ router.post('/forgot-password', async (req: Request, res: Response): Promise<voi
       return;
     }
 
-    const email = userResult.rows[0].email;
+    const userRow = userResult.rows[0];
+
+    if (userRow.role === 'superadmin') {
+      await logAudit({
+        userId: userRow.id || null,
+        username,
+        category: 'LOGIN',
+        action: 'FORGOT_PASSWORD_BLOCKED_SUPERADMIN',
+        status: 'FAILURE',
+        ip: req.ip || 'unknown',
+        details: { reason: 'superadmin_otp_reset_blocked' }
+      });
+
+      res.json({ message: 'If an account exists with that username and has an email associated, a reset OTP has been sent.' });
+      return;
+    }
+
+    const email = userRow.email;
     const otp = Math.floor(100000 + Math.random() * 900000).toString(); // 6 digit OTP
     
     // Invalidate any existing unused OTPs for this user
@@ -326,9 +364,24 @@ router.post('/verify-otp', async (req: Request, res: Response): Promise<void> =>
   }
 
   try {
-    // Resolve user ID if exists
-    const userCheck = await pool.query('SELECT id FROM users WHERE username = $1', [username]);
-    const userId = userCheck.rows[0]?.id || null;
+    // Resolve user ID & role if exists
+    const userCheck = await pool.query('SELECT id, role FROM users WHERE username = $1', [username]);
+    const userRow = userCheck.rows[0];
+    const userId = userRow?.id || null;
+
+    if (userRow?.role === 'superadmin') {
+      await logAudit({
+        userId,
+        username,
+        category: 'LOGIN',
+        action: 'OTP_VERIFY_FAILED',
+        status: 'FAILURE',
+        ip,
+        details: { reason: 'superadmin_otp_verify_blocked' }
+      });
+      res.status(400).json({ error: 'Invalid username or OTP code.' });
+      return;
+    }
 
     // Look up the latest OTP row for this username
     const otpResult = await pool.query(
@@ -552,6 +605,25 @@ router.post('/reset-password', async (req: Request, res: Response): Promise<void
       return;
     }
 
+    // Role check defense-in-depth: block superadmin reset
+    const userCheck = await pool.query('SELECT id, role FROM users WHERE username = $1', [decoded.username]);
+    const userRow = userCheck.rows[0];
+    const userId = userRow?.id || null;
+
+    if (!userRow || userRow.role === 'superadmin') {
+      await logAudit({
+        userId,
+        username: decoded.username,
+        category: 'LOGIN',
+        action: 'RESET_PASSWORD_FAILED',
+        status: 'FAILURE',
+        ip,
+        details: { reason: 'superadmin_reset_password_blocked' }
+      });
+      res.status(400).json({ error: 'Invalid or expired reset token. Please request a new code.' });
+      return;
+    }
+
     // Update password
     const passwordHash = await bcrypt.hash(newPassword, 10);
     await pool.query(
@@ -565,8 +637,6 @@ router.post('/reset-password', async (req: Request, res: Response): Promise<void
       [decoded.username]
     );
 
-    const userCheck = await pool.query('SELECT id FROM users WHERE username = $1', [decoded.username]);
-    const userId = userCheck.rows[0]?.id || null;
     await logAudit({
       userId,
       username: decoded.username,
@@ -580,6 +650,119 @@ router.post('/reset-password', async (req: Request, res: Response): Promise<void
   } catch (err: any) {
     console.error('Reset password error:', err);
     res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// POST /api/auth/change-required-password
+router.post('/change-required-password', async (req: Request, res: Response): Promise<void> => {
+  const { tempToken, newPassword } = req.body;
+  const ip = req.ip || 'unknown';
+
+  if (!tempToken || !newPassword) {
+    res.status(400).json({ error: 'Temporary token and new password are required' });
+    return;
+  }
+
+  if (typeof newPassword !== 'string' || newPassword.trim().length < 6) {
+    res.status(400).json({ error: 'Password must be at least 6 characters long' });
+    return;
+  }
+
+  try {
+    const secret = process.env.JWT_SECRET || 'super_secret_placeholder_change_me';
+    let decoded: { userId: number; username: string; purpose: string };
+
+    try {
+      decoded = jwt.verify(tempToken, secret) as any;
+    } catch (tokenErr) {
+      res.status(400).json({ error: 'Invalid or expired session. Please log in again.' });
+      return;
+    }
+
+    if (decoded.purpose !== 'required_password_change') {
+      res.status(400).json({ error: 'Invalid token purpose' });
+      return;
+    }
+
+    // Fetch user details
+    const userResult = await pool.query(
+      `SELECT u.id, u.username, u.role, u.prj_mgr_id, pm.prj_mgr_name
+       FROM users u
+       LEFT JOIN project_managers pm ON u.prj_mgr_id = pm.prj_mgr_id
+       WHERE u.id = $1`,
+      [decoded.userId]
+    );
+
+    if (userResult.rows.length === 0) {
+      res.status(404).json({ error: 'User not found' });
+      return;
+    }
+
+    const userRow = userResult.rows[0];
+    const passwordHash = await bcrypt.hash(newPassword.trim(), 10);
+
+    // Update password and clear must_change_password flag
+    await pool.query(
+      `UPDATE users SET password_hash = $1, must_change_password = FALSE WHERE id = $2`,
+      [passwordHash, userRow.id]
+    );
+
+    // Issue session tokens
+    const accessExpiry = process.env.JWT_ACCESS_EXPIRY || '15m';
+
+    const accessToken = jwt.sign(
+      {
+        userId: userRow.id,
+        username: userRow.username,
+        role: userRow.role,
+        prjMgrId: userRow.prj_mgr_id
+      },
+      secret,
+      { expiresIn: accessExpiry as any }
+    );
+
+    const rawRefreshToken = generateRefreshToken();
+    const hashedRefreshToken = hashToken(rawRefreshToken);
+    const deviceLabel = parseUserAgent(req.headers['user-agent']);
+
+    // Save session in DB
+    await pool.query(
+      `INSERT INTO sessions (user_id, refresh_token_hash, device_label, ip_address)
+       VALUES ($1, $2, $3, $4)`,
+      [userRow.id, hashedRefreshToken, deviceLabel, ip]
+    );
+
+    // Set httpOnly cookie
+    res.cookie('npms_refresh', rawRefreshToken, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'strict',
+      path: '/api/auth',
+      maxAge: 7 * 24 * 60 * 60 * 1000 // 7 days
+    });
+
+    await logAudit({
+      userId: userRow.id,
+      username: userRow.username,
+      category: 'LOGIN',
+      action: 'REQUIRED_PASSWORD_CHANGE_SUCCESS',
+      status: 'SUCCESS',
+      ip,
+      details: { device: deviceLabel }
+    });
+
+    res.json({
+      accessToken,
+      user: {
+        username: userRow.username,
+        role: userRow.role,
+        prjMgrId: userRow.prj_mgr_id,
+        prjMgrName: userRow.prj_mgr_name || null
+      }
+    });
+  } catch (err: any) {
+    console.error('Change required password error:', err);
+    res.status(500).json({ error: 'Failed to update password' });
   }
 });
 

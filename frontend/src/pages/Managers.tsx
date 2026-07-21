@@ -4,7 +4,7 @@ import { useAuth } from '../context/AuthContext';
 import { api } from '../lib/api';
 import { Breadcrumbs } from '../components/Breadcrumbs';
 import { toast } from '../lib/toast';
-import { X, Search, Plus, UserPlus, Mail, Phone, ShieldAlert, Key } from 'lucide-react';
+import { X, Search, Plus, UserPlus, Mail, Phone, ShieldAlert, Key, Copy, Check } from 'lucide-react';
 
 export const Managers: React.FC = () => {
   const { user } = useAuth();
@@ -22,6 +22,13 @@ export const Managers: React.FC = () => {
   const [email, setEmail] = useState('');
   const [mobileNumber, setMobileNumber] = useState('');
   const [submitting, setSubmitting] = useState(false);
+
+  // Reset Password states
+  const [selectedManagerForReset, setSelectedManagerForReset] = useState<any | null>(null);
+  const [resetPasswordInput, setResetPasswordInput] = useState('');
+  const [resetSubmitting, setResetSubmitting] = useState(false);
+  const [passwordResultModal, setPasswordResultModal] = useState<{ show: boolean; password: string; managerName: string }>({ show: false, password: '', managerName: '' });
+  const [copied, setCopied] = useState(false);
 
   // 1. Role-based redirect
   useEffect(() => {
@@ -112,6 +119,58 @@ export const Managers: React.FC = () => {
     }
   };
 
+  const handleOpenResetModal = (manager: any) => {
+    setSelectedManagerForReset(manager);
+    setResetPasswordInput('');
+  };
+
+  const handleGenerateResetPassword = () => {
+    const chars = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%^&*()';
+    let pass = '';
+    for (let i = 0; i < 12; i++) {
+      pass += chars.charAt(Math.floor(Math.random() * chars.length));
+    }
+    setResetPasswordInput(pass);
+    toast.info('Generated a secure password');
+  };
+
+  const handleResetSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedManagerForReset) return;
+
+    setResetSubmitting(true);
+    try {
+      const res = await api.resetManagerPassword(selectedManagerForReset.prjMgrId, resetPasswordInput || undefined);
+      toast.success(`Reset password for ${selectedManagerForReset.prjMgrName}`);
+      
+      const newPass = res.password;
+      const mgrName = selectedManagerForReset.prjMgrName;
+      setSelectedManagerForReset(null);
+      setResetPasswordInput('');
+
+      setPasswordResultModal({
+        show: true,
+        password: newPass,
+        managerName: mgrName
+      });
+      setCopied(false);
+    } catch (err: any) {
+      console.error(err);
+      toast.error(err.message || 'Failed to reset manager password');
+    } finally {
+      setResetSubmitting(false);
+    }
+  };
+
+  const handleCopyPassword = () => {
+    if (passwordResultModal.password) {
+      navigator.clipboard.writeText(passwordResultModal.password);
+      setCopied(true);
+      toast.success('Password copied to clipboard');
+      setTimeout(() => setCopied(false), 3000);
+    }
+  };
+
   // Filtered managers for search
   const filteredManagers = managers.filter(m =>
     m.prjMgrName.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -180,12 +239,13 @@ export const Managers: React.FC = () => {
                   <th className="p-4 font-headline text-xs font-bold text-secondary uppercase tracking-wider">Mobile Number</th>
                   <th className="p-4 font-headline text-xs font-bold text-secondary uppercase tracking-wider">Sync Source</th>
                   <th className="p-4 font-headline text-xs font-bold text-secondary uppercase tracking-wider">Projects Assigned</th>
+                  <th className="p-4 font-headline text-xs font-bold text-secondary uppercase tracking-wider text-right">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-outline-variant">
                 {filteredManagers.length === 0 ? (
                   <tr>
-                    <td colSpan={6} className="p-12 text-center text-secondary font-headline text-sm">
+                    <td colSpan={7} className="p-12 text-center text-secondary font-headline text-sm">
                       No project managers found matching search query.
                     </td>
                   </tr>
@@ -241,6 +301,20 @@ export const Managers: React.FC = () => {
                       </td>
                       <td className="p-4 font-headline text-sm font-bold text-on-surface">
                         {m.projectCount} projects
+                      </td>
+                      <td className="p-4 text-right">
+                        {m.username ? (
+                          <button
+                            onClick={() => handleOpenResetModal(m)}
+                            className="px-3 py-1.5 bg-surface-container border border-outline-variant hover:bg-surface-container-high text-primary hover:text-primary-dark rounded-md text-xs font-semibold flex items-center gap-1.5 ml-auto transition-all shadow-sm"
+                            title="Reset Manager Password"
+                          >
+                            <Key className="w-3.5 h-3.5" />
+                            <span>Reset Password</span>
+                          </button>
+                        ) : (
+                          <span className="text-outline text-xs italic">No user account</span>
+                        )}
                       </td>
                     </tr>
                   ))
@@ -357,6 +431,107 @@ export const Managers: React.FC = () => {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+      {/* Reset Password Prompt Modal */}
+      {selectedManagerForReset && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4" role="dialog" aria-modal="true">
+          <div className="absolute inset-0 bg-black/40" onClick={() => setSelectedManagerForReset(null)} />
+          <div className="relative bg-surface-container-lowest border border-outline-variant rounded-xl p-6 w-full max-w-md shadow-2xl animate-fade-in-up z-10">
+            <button
+              onClick={() => setSelectedManagerForReset(null)}
+              className="absolute top-4 right-4 p-1 rounded-md text-secondary hover:text-on-surface hover:bg-surface-container transition-colors"
+              aria-label="Close dialog"
+            >
+              <X className="w-4 h-4" />
+            </button>
+
+            <h3 className="font-headline text-lg font-bold text-on-surface mb-1">Reset Manager Password</h3>
+            <p className="font-sans text-xs text-secondary mb-4">
+              Reset password for <strong className="text-on-surface">{selectedManagerForReset.prjMgrName}</strong> ({selectedManagerForReset.username}). The manager will be forced to set a new password on next login.
+            </p>
+
+            <form onSubmit={handleResetSubmit} className="space-y-4 font-sans text-left">
+              <div>
+                <label className="text-[10px] font-bold text-secondary uppercase tracking-wider block mb-1">New Temporary Password (Optional)</label>
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    placeholder="Leave blank to auto-generate"
+                    className="flex-1 bg-[#F3F4F6] border border-outline-variant rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary text-on-surface font-mono"
+                    value={resetPasswordInput}
+                    onChange={(e) => setResetPasswordInput(e.target.value)}
+                  />
+                  <button
+                    type="button"
+                    onClick={handleGenerateResetPassword}
+                    className="px-3 py-1.5 bg-surface-container border border-outline-variant hover:bg-surface-container-high rounded-lg text-xs font-semibold text-secondary flex items-center gap-1 transition-colors"
+                  >
+                    <Key className="w-3.5 h-3.5" />
+                    <span>Generate</span>
+                  </button>
+                </div>
+              </div>
+
+              <div className="flex justify-end gap-3 pt-4 border-t border-outline-variant">
+                <button
+                  type="button"
+                  onClick={() => setSelectedManagerForReset(null)}
+                  className="px-4 py-2 border border-outline-variant rounded-lg text-sm font-semibold text-secondary hover:bg-surface-container transition-all"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={resetSubmitting}
+                  className="px-4 py-2 bg-primary text-on-primary rounded-lg hover:bg-primary-container text-sm font-semibold transition-all flex items-center gap-1.5"
+                >
+                  <Key className="w-4 h-4" />
+                  <span>{resetSubmitting ? 'Resetting...' : 'Reset Password'}</span>
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Password Result Modal (One-Time Visible) */}
+      {passwordResultModal.show && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4" role="dialog" aria-modal="true">
+          <div className="absolute inset-0 bg-black/40" onClick={() => setPasswordResultModal({ show: false, password: '', managerName: '' })} />
+          <div className="relative bg-surface-container-lowest border border-outline-variant rounded-xl p-6 w-full max-w-md shadow-2xl animate-fade-in-up z-10">
+            <h3 className="font-headline text-lg font-bold text-on-surface mb-1">Password Reset Complete</h3>
+            <p className="font-sans text-xs text-secondary mb-3">
+              Password has been successfully updated for <strong className="text-on-surface">{passwordResultModal.managerName}</strong>.
+            </p>
+
+            <div className="p-3 bg-amber-50 border border-amber-200 text-amber-900 rounded-lg text-xs mb-4">
+              <strong className="block font-bold mb-0.5">⚠️ One-Time Visible Password</strong>
+              Please communicate this password to the project manager. It will not be shown again.
+            </div>
+
+            <div className="flex items-center justify-between p-3 bg-surface-container rounded-lg border border-outline-variant font-mono text-sm font-bold text-on-surface mb-6 select-all">
+              <span>{passwordResultModal.password}</span>
+              <button
+                onClick={handleCopyPassword}
+                className="p-1.5 hover:bg-surface-container-high rounded text-secondary hover:text-primary transition-colors flex items-center gap-1 text-xs font-sans font-semibold"
+                title="Copy password to clipboard"
+              >
+                {copied ? <Check className="w-4 h-4 text-status-success-text" /> : <Copy className="w-4 h-4" />}
+                <span>{copied ? 'Copied' : 'Copy'}</span>
+              </button>
+            </div>
+
+            <div className="flex justify-end">
+              <button
+                type="button"
+                onClick={() => setPasswordResultModal({ show: false, password: '', managerName: '' })}
+                className="px-5 py-2 bg-primary text-on-primary rounded-lg hover:bg-primary-container text-sm font-semibold transition-all"
+              >
+                Done
+              </button>
+            </div>
           </div>
         </div>
       )}

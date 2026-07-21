@@ -17,7 +17,7 @@ export const Administration: React.FC = () => {
   const filteredUsers = q
     ? users.filter(
         (u) =>
-          u.name.toLowerCase().includes(q) ||
+          (u.name || '').toLowerCase().includes(q) ||
           (u.email || '').toLowerCase().includes(q)
       )
     : users;

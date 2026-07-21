@@ -702,6 +702,33 @@ export const api = {
     return res.json();
   },
 
+  resetManagerPassword: async (prjMgrId: number, password?: string): Promise<{ success: boolean; message: string; password: string }> => {
+    const res = await fetchWithAuth(`${API_URL}/api/managers/${prjMgrId}/reset-password`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ password })
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.error || 'Failed to reset manager password');
+    }
+    return res.json();
+  },
+
+  changeRequiredPassword: async (tempToken: string, newPassword: string): Promise<any> => {
+    const res = await fetch(`${API_URL}/api/auth/change-required-password`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ tempToken, newPassword }),
+      credentials: 'include'
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.error || 'Failed to update password');
+    }
+    return res.json();
+  },
+
   // SESSIONS
   getSessions: async (): Promise<any[]> => {
     const res = await fetchWithAuth(`${API_URL}/api/auth/sessions`);

@@ -125,8 +125,8 @@ router.post('/', async (req: AuthenticatedRequest, res: Response): Promise<void>
 
     // Insert into users
     const userInsertQuery = `
-      INSERT INTO users (username, password_hash, role, prj_mgr_id, email)
-      VALUES ($1, $2, 'project_manager', $3, $4)
+      INSERT INTO users (username, password_hash, role, prj_mgr_id, email, must_change_password)
+      VALUES ($1, $2, 'project_manager', $3, $4, TRUE)
       RETURNING id, username, role, prj_mgr_id
     `;
     const userInsertResult = await pool.query(userInsertQuery, [
@@ -194,7 +194,106 @@ router.post('/', async (req: AuthenticatedRequest, res: Response): Promise<void>
   }
 });
 
-// NOTE / GAP: The superadmin manual password-reset feature (POST /api/managers/:prjMgrId/reset-password with forced must_change_password)
-// is not yet implemented in the current codebase. When built, it should log category 'ADMIN_CHANGE', action 'PASSWORD_RESET_BY_ADMIN' with status 'SUCCESS'/'FAILURE'.
+function generateSecurePassword(): string {
+  const chars = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%^&*()';
+  let pass = '';
+  for (let i = 0; i < 12; i++) {
+    pass += chars.charAt(Math.floor(Math.random() * chars.length));
+  }
+  return pass;
+}
+
+// POST /api/managers/:prjMgrId/reset-password
+router.post('/:prjMgrId/reset-password', async (req: AuthenticatedRequest, res: Response): Promise<void> => {
+  const prjMgrId = parseInt(String(req.params.prjMgrId), 10);
+  const { password } = req.body;
+
+  try {
+    // Role Authorization Check
+    if (req.user?.role !== 'superadmin') {
+      res.status(403).json({ error: 'Access denied. Super Admin role required.' });
+      return;
+    }
+
+    if (isNaN(prjMgrId)) {
+      res.status(400).json({ error: 'Invalid Project Manager ID.' });
+      return;
+    }
+
+    // 1. Check if user account exists for this prjMgrId
+    const userCheck = await pool.query('SELECT id, username FROM users WHERE prj_mgr_id = $1', [prjMgrId]);
+    if (userCheck.rows.length === 0) {
+      await logAudit({
+        userId: req.user?.userId,
+        username: req.user?.username || 'unknown',
+        category: 'ADMIN_CHANGE',
+        action: 'PASSWORD_RESET_BY_ADMIN',
+        status: 'FAILURE',
+        ip: req.ip || 'unknown',
+        details: {
+          prj_mgr_id: prjMgrId,
+          error: 'No user account found for this manager'
+        }
+      });
+      res.status(404).json({ error: 'No user account found for this Project Manager.' });
+      return;
+    }
+
+    const targetUser = userCheck.rows[0];
+    const newPassword = password && typeof password === 'string' && password.trim().length >= 6
+      ? password.trim()
+      : generateSecurePassword();
+
+    const passwordHash = await bcrypt.hash(newPassword, 10);
+
+    // 2. Update password_hash and set must_change_password = TRUE
+    await pool.query(
+      `UPDATE users SET password_hash = $1, must_change_password = TRUE WHERE prj_mgr_id = $2`,
+      [passwordHash, prjMgrId]
+    );
+
+    // 3. Invalidate active sessions
+    await pool.query(
+      `UPDATE sessions SET revoked = true WHERE user_id = $1`,
+      [targetUser.id]
+    );
+
+    // 4. Log audit entry
+    await logAudit({
+      userId: req.user?.userId,
+      username: req.user?.username || 'unknown',
+      category: 'ADMIN_CHANGE',
+      action: 'PASSWORD_RESET_BY_ADMIN',
+      status: 'SUCCESS',
+      ip: req.ip || 'unknown',
+      details: {
+        prj_mgr_id: prjMgrId,
+        target_username: targetUser.username,
+        target_user_id: targetUser.id
+      }
+    });
+
+    res.json({
+      success: true,
+      message: 'Password reset successfully',
+      password: newPassword
+    });
+  } catch (error: any) {
+    console.error('Error resetting manager password:', error);
+    await logAudit({
+      userId: req.user?.userId,
+      username: req.user?.username || 'unknown',
+      category: 'ADMIN_CHANGE',
+      action: 'PASSWORD_RESET_BY_ADMIN',
+      status: 'FAILURE',
+      ip: req.ip || 'unknown',
+      details: {
+        prj_mgr_id: prjMgrId,
+        error: error.message
+      }
+    });
+    res.status(500).json({ error: 'Failed to reset manager password.' });
+  }
+});
 
 export default router;

@@ -20,6 +20,7 @@ import {
   SearchX
 } from 'lucide-react';
 import { api } from '../lib/api';
+import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
 import { CompactStatCard } from '../components/CompactStatCard';
 import { toast } from '../lib/toast';
@@ -50,9 +51,34 @@ const ChartEmptyState: React.FC<ChartEmptyStateProps> = ({ title, description, i
 
 export const Dashboard: React.FC = () => {
   const { theme } = useTheme();
-  const [searchParams] = useSearchParams();
+  const { user } = useAuth();
+  const isPM = user?.role === 'project_manager';
+  const isAdmin = user?.role === 'admin' || user?.role === 'superadmin';
+
+  const [searchParams, setSearchParams] = useSearchParams();
   const prjMgrIdParam = searchParams.get('prjMgrId');
   const prjMgrId = prjMgrIdParam && prjMgrIdParam !== 'All' ? parseInt(prjMgrIdParam, 10) : null;
+  const isDataFiltered = isPM || !!prjMgrId;
+
+  const [managers, setManagers] = useState<{ prjMgrId: number; prjMgrName: string }[]>([]);
+
+  useEffect(() => {
+    if (isAdmin) {
+      api.getProjectManagers()
+        .then(data => setManagers(data || []))
+        .catch(err => console.error("Failed to load managers:", err));
+    }
+  }, [isAdmin]);
+
+  const handleManagerChange = (val: string) => {
+    const newParams = new URLSearchParams(searchParams);
+    if (val === 'All' || !val) {
+      newParams.delete('prjMgrId');
+    } else {
+      newParams.set('prjMgrId', val);
+    }
+    setSearchParams(newParams);
+  };
 
   const [metrics, setMetrics] = useState({
     totalReceived: 0,
@@ -371,16 +397,45 @@ export const Dashboard: React.FC = () => {
   return (
     <div className="space-y-stack-lg">
       {/* Page Header */}
-      <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <h2 className="font-headline text-2xl font-bold text-on-surface mb-1">Dashboard</h2>
+          <div className="flex items-center gap-3 mb-1">
+            <h2 className="font-headline text-2xl font-bold text-on-surface">Dashboard</h2>
+            {isPM && (
+              <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-primary/10 text-primary border border-primary/20">
+                Showing your assigned projects only
+              </span>
+            )}
+          </div>
           <p className="font-sans text-sm text-secondary">Real-time tracking of project liquidity and settlements.</p>
         </div>
-        {metrics.lastImportedDate && (
-          <div className="text-secondary font-sans text-xs bg-surface-container-low border border-outline-variant px-3 py-1.5 rounded-md shadow-sm self-start sm:self-end">
-            Data last updated: <span className="font-semibold text-on-surface">{metrics.lastImportedDate}</span>
-          </div>
-        )}
+        <div className="flex flex-wrap items-center gap-3 self-start sm:self-end">
+          {isAdmin && (
+            <div className="flex items-center gap-2">
+              <label htmlFor="pm-selector" className="text-xs font-bold text-secondary font-sans whitespace-nowrap">
+                Filter Manager:
+              </label>
+              <select
+                id="pm-selector"
+                value={prjMgrId ? String(prjMgrId) : 'All'}
+                onChange={(e) => handleManagerChange(e.target.value)}
+                className="bg-surface border border-outline-variant text-on-surface font-sans text-xs rounded-md px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-primary shadow-sm cursor-pointer font-medium"
+              >
+                <option value="All">All Managers</option>
+                {managers.map((m) => (
+                  <option key={m.prjMgrId} value={m.prjMgrId}>
+                    {m.prjMgrName}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
+          {metrics.lastImportedDate && (
+            <div className="text-secondary font-sans text-xs bg-surface-container-low border border-outline-variant px-3 py-1.5 rounded-md shadow-sm">
+              Data last updated: <span className="font-semibold text-on-surface">{metrics.lastImportedDate}</span>
+            </div>
+          )}
+        </div>
       </div>
 
       {/* Metric Cards Row — responsive grid */}
@@ -598,7 +653,7 @@ export const Dashboard: React.FC = () => {
               <ChartEmptyState
                 title="No comparison data available"
                 description="There are no projects to compare for the current selection."
-                isFiltered={!!prjMgrId}
+                isFiltered={isDataFiltered}
               />
             ) : (
               <div className="absolute inset-0 dont-translate bhashini-skip-translation overflow-x-auto overflow-y-hidden flex justify-start items-stretch">
@@ -668,7 +723,7 @@ export const Dashboard: React.FC = () => {
               <ChartEmptyState
                 title="No projects currently flagged"
                 description="All projects are healthy for this risk category."
-                isFiltered={!!prjMgrId}
+                isFiltered={isDataFiltered}
               />
             ) : (
               <div className="absolute inset-0 dont-translate bhashini-skip-translation overflow-x-auto overflow-y-hidden flex justify-start items-stretch">
@@ -739,7 +794,7 @@ export const Dashboard: React.FC = () => {
               <ChartEmptyState
                 title="No purchase orders currently flagged"
                 description="All purchase orders are healthy for this risk category."
-                isFiltered={!!prjMgrId}
+                isFiltered={isDataFiltered}
               />
             ) : (
               <div className="absolute inset-0 dont-translate bhashini-skip-translation overflow-x-auto overflow-y-hidden flex justify-start items-stretch">
@@ -810,7 +865,7 @@ export const Dashboard: React.FC = () => {
               <ChartEmptyState
                 title="No invoices currently flagged"
                 description="All invoices are healthy for this risk category."
-                isFiltered={!!prjMgrId}
+                isFiltered={isDataFiltered}
               />
             ) : (
               <div className="absolute inset-0 dont-translate bhashini-skip-translation overflow-x-auto overflow-y-hidden flex justify-start items-stretch">
