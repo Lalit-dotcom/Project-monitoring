@@ -244,6 +244,55 @@ export const Reports: React.FC = () => {
     }
   };
 
+  // Generate Utilization Certificate (UC) text file download
+  const handleGenerateUC = (e: React.MouseEvent, p: any) => {
+    e.stopPropagation();
+    try {
+      const amountReceived = Math.round(Number(p.amount_received || 0));
+      const totalUtilized = Math.round(
+        p.total_amount_paid !== undefined && p.total_amount_paid !== null
+          ? Number(p.total_amount_paid)
+          : Number(p.amount_received || 0) - Number(p.outstanding || 0)
+      );
+      const pending = Math.round(amountReceived - totalUtilized);
+
+      const now = new Date();
+      const dateStr = `${now.getDate()}/${now.getMonth() + 1}/${now.getFullYear()}`;
+
+      const content = `=======================================================
+        UTILIZATION CERTIFICATE (UC)
+=======================================================
+
+Project Code: ${p.project_cd || ''}
+Organisation: ${p.customer_name || ''}
+-------------------------------------------------------
+
+Total Funds Received : INR ${amountReceived}
+Total Funds Utilized : INR ${totalUtilized}
+Pending Utilization  : INR ${pending}
+-------------------------------------------------------
+
+Certified that out of INR ${amountReceived} received from the User Department, a sum of INR ${totalUtilized} has been utilized for the purpose for which it was sanctioned.
+
+Generated on: ${dateStr}
+NICSI Accounts Division
+=======================================================`;
+
+      const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `UC_${p.project_cd}.txt`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+    } catch (err: any) {
+      console.error('Failed to generate UC:', err);
+      toast.error('Failed to generate Utilization Certificate');
+    }
+  };
+
   // Sorting helper for tables in memory
   const handleSort = (field: string) => {
     if (sortBy === field) {
@@ -780,6 +829,7 @@ export const Reports: React.FC = () => {
                         <th className="px-6 py-4 cursor-pointer hover:bg-surface-container-high text-right" onClick={() => handleSort('amount_received')}>Received {sortBy === 'amount_received' && (sortOrder === 'asc' ? '↑' : '↓')}</th>
                         <th className="px-6 py-4 cursor-pointer hover:bg-surface-container-high text-right" onClick={() => handleSort('outstanding')}>Outstanding {sortBy === 'outstanding' && (sortOrder === 'asc' ? '↑' : '↓')}</th>
                         <th className="px-6 py-4 cursor-pointer hover:bg-surface-container-high" onClick={() => handleSort('payment_status')}>Status {sortBy === 'payment_status' && (sortOrder === 'asc' ? '↑' : '↓')}</th>
+                        <th className="px-6 py-4 text-center">Action</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-outline-variant">
@@ -809,6 +859,17 @@ export const Reports: React.FC = () => {
                             }`}>
                               {p.payment_status}
                             </span>
+                          </td>
+                          <td className="px-6 py-4 text-center">
+                            <button
+                              type="button"
+                              onClick={(e) => handleGenerateUC(e, p)}
+                              className="px-2.5 py-1 text-[11px] font-semibold text-primary border border-primary/30 hover:border-primary hover:bg-primary/5 rounded-md transition-colors inline-flex items-center gap-1 shadow-sm"
+                              title="Generate Utilization Certificate"
+                            >
+                              <FileText className="w-3.5 h-3.5" />
+                              <span>Generate UC</span>
+                            </button>
                           </td>
                         </tr>
                       ))}

@@ -108,6 +108,7 @@ router.get('/:type', async (req: AuthenticatedRequest, res: Response): Promise<v
           p.po_amount,
           p.total_invoice_amount,
           p.amount_received,
+          p.total_amount_paid,
           COALESCE(p.total_invoice_amount, 0) - COALESCE(p.total_amount_paid, 0) as outstanding,
           CASE
             WHEN p.no_of_inv_billdesk = 0 AND p.total_invoice_amount = 0 THEN 'No Invoices Yet'
